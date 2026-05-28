@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>量化回测系统 - 历史结果</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a1a;
+            color: #fff;
+            min-height: 100vh;
+        }
+        .sidebar {
+            position: fixed;
+            left: 0; top: 0; bottom: 0;
+            width: 220px;
+            background: rgba(255,255,255,0.03);
+            border-right: 1px solid rgba(255,255,255,0.06);
+            padding: 20px 0;
+        }
+        .sidebar-brand { padding: 0 20px 20px; font-size: 18px; font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 16px; }
+        .sidebar-brand span { color: #6366f1; }
+        .nav-item {
+            display: flex; align-items: center; padding: 12px 20px;
+            color: rgba(255,255,255,0.5); text-decoration: none; font-size: 14px;
+            transition: all 0.2s; cursor: pointer;
+        }
+        .nav-item:hover, .nav-item.active { color: #fff; background: rgba(99,102,241,0.1); }
+        .nav-item.active { border-right: 3px solid #6366f1; }
+        .nav-item .icon { margin-right: 10px; font-size: 18px; }
+        .main { margin-left: 220px; padding: 30px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .header h1 { font-size: 24px; }
+        .header-actions button {
+            padding: 10px 20px;
+            background: rgba(99,102,241,0.15);
+            border: 1px solid rgba(99,102,241,0.3);
+            border-radius: 8px;
+            color: #818cf8;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .results-container {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 24px;
+            min-height: 300px;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 13px; }
+        th { color: rgba(255,255,255,0.5); font-weight: 500; cursor: pointer; }
+        th:hover { color: rgba(255,255,255,0.8); }
+        td { color: rgba(255,255,255,0.8); }
+        tr:hover td { background: rgba(255,255,255,0.02); }
+        .badge {
+            padding: 3px 10px; border-radius: 12px; font-size: 12px;
+        }
+        .badge.dual_ma { background: rgba(99,102,241,0.2); color: #818cf8; }
+        .badge.rsi { background: rgba(34,197,94,0.2); color: #4ade80; }
+        .badge.macd { background: rgba(234,179,8,0.2); color: #facc15; }
+        .badge.bollinger { background: rgba(239,68,68,0.2); color: #f87171; }
+        .pos { color: #22c55e; }
+        .neg { color: #ef4444; }
+        .detail-panel {
+            display: none;
+            margin-top: 24px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 24px;
+        }
+        .detail-panel.visible { display: block; }
+        .close-btn {
+            float: right;
+            background: none;
+            border: 1px solid rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.5);
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin: 16px 0;
+        }
+        .metric {
+            text-align: center;
+            padding: 14px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 10px;
+        }
+        .metric-label { color: rgba(255,255,255,0.4); font-size: 12px; }
+        .metric-value { font-size: 20px; font-weight: 700; }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: rgba(255,255,255,0.3);
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-state a { color: #6366f1; }
+        .delete-btn {
+            background: none;
+            border: 1px solid rgba(239,68,68,0.3);
+            color: #ef4444;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="sidebar-brand">📊 <span>量化</span>回测</div>
+        <a class="nav-item" href="/dashboard"><span class="icon">📈</span> 仪表盘</a>
+        <a class="nav-item" href="/backtest"><span class="icon">🔄</span> 回测分析</a>
+        <a class="nav-item active" href="/results"><span class="icon">📋</span> 历史结果</a>
+        <a class="nav-item" href="/strategies"><span class="icon">⚙️</span> 策略管理</a>
+        <hr style="border-color: rgba(255,255,255,0.06); margin: 20px;">
+        <div class="nav-item" onclick="logout()"><span class="icon">🚪</span> 退出</div>
+    </nav>
+
+    <div class="main">
+        <div class="header">
+            <h1>📋 历史回测结果</h1>
+            <div class="header-actions">
+                <button onclick="window.location.href='/backtest'">+ 新建回测</button>
+            </div>
+        </div>
+
+        <div class="results-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0)">策略</th>
+                        <th onclick="sortTable(1)">标的</th>
+                        <th onclick="sortTable(2)">收益率</th>
+                        <th onclick="sortTable(3)">年化</th>
+                        <th onclick="sortTable(4)">最大回撤</th>
+                        <th onclick="sortTable(5)">夏普比率</th>
+                        <th onclick="sortTable(6)">交易</th>
+                        <th onclick="sortTable(7)">胜率</th>
+                        <th onclick="sortTable(8)">日期</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="results-body"></tbody>
+            </table>
+            <div class="empty-state" id="empty-state">
+                <div class="icon">📊</div>
+                <p>暂无回测记录</p>
+                <p style="margin-top:8px;">去 <a href="/backtest">新建回测</a> 开始分析</p>
+            </div>
+        </div>
+
+        <div class="detail-panel" id="detail-panel">
+            <button class="close-btn" onclick="closeDetail()">关闭</button>
+            <h3 id="detail-title" style="margin-bottom:8px;"></h3>
+            <div class="metric-grid" id="detail-metrics"></div>
+            <canvas id="detailChart" style="max-height:300px; margin-bottom:16px;"></canvas>
+            <div style="max-height:250px; overflow-y:auto;">
+                <table class="trade-table" style="width:100%; border-collapse:collapse; font-size:13px;">
+                    <thead><tr><th>日期</th><th>操作</th><th>价格</th><th>数量</th><th>盈亏</th><th>累计盈亏</th></tr></thead>
+                    <tbody id="detail-trades"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+        const token = localStorage.getItem('token');
+        if (!token) { window.location.href = '/login'; }
+
+        function logout() { localStorage.clear(); window.location.href = '/login'; }
+
+        function strategyName(t) { const m={dual_ma:'双均线',rsi:'RSI',macd:'MACD',bollinger:'布林带'}; return m[t]||t; }
+        function fmtPct(v) { return (v*100).toFixed(2)+'%'; }
+        let resultsData = [];
+
+        async function loadResults() {
+            try {
+                const res = await fetch('/api/backtest/results', {
+                    headers: {'Authorization':'Bearer '+token}
+                });
+                const data = await res.json();
+                resultsData = data.results || [];
+
+                const tbody = document.getElementById('results-body');
+                const empty = document.getElementById('empty-state');
+
+                if (resultsData.length === 0) {
+                    tbody.innerHTML = '';
+                    empty.style.display = 'block';
+                    return;
+                }
+                empty.style.display = 'none';
+                renderTable(resultsData);
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        function renderTable(results) {
+            const tbody = document.getElementById('results-body');
+            tbody.innerHTML = results.map(r => `
+                <tr onclick="viewDetail(${r.id})" style="cursor:pointer;">
+                    <td><span class="badge ${r.strategy_type}">${strategyName(r.strategy_type)}</span></td>
+                    <td>${r.symbol}</td>
+                    <td class="${r.total_return >= 0 ? 'pos' : 'neg'}">${fmtPct(r.total_return)}</td>
+                    <td class="${r.annual_return >= 0 ? 'pos' : 'neg'}">${fmtPct(r.annual_return)}</td>
+                    <td class="neg">${fmtPct(r.max_drawdown)}</td>
+                    <td>${typeof r.sharpe_ratio === 'number' ? r.sharpe_ratio.toFixed(2) : '-'}</td>
+                    <td>${r.total_trades}</td>
+                    <td class="${r.win_rate >= 0.5 ? 'pos' : 'neg'}">${fmtPct(r.win_rate)}</td>
+                    <td style="font-size:12px;color:rgba(255,255,255,0.4)">${r.created_at ? r.created_at.slice(0,10) : ''}</td>
+                    <td onclick="event.stopPropagation()">
+                        <button class="delete-btn" onclick="deleteResult(${r.id})">删除</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        let sortAsc = {};
+        function sortTable(col) {
+            sortAsc[col] = !sortAsc[col];
+            const key = ['strategy_type','symbol','total_return','annual_return','max_drawdown','sharpe_ratio','total_trades','win_rate','created_at'][col];
+            resultsData.sort((a,b) => {
+                let va = a[key] || '', vb = b[key] || '';
+                if (typeof va === 'string') return sortAsc[col] ? va.localeCompare(vb) : vb.localeCompare(va);
+                return sortAsc[col] ? va - vb : vb - va;
+            });
+            renderTable(resultsData);
+        }
+
+        async function viewDetail(id) {
+            const panel = document.getElementById('detail-panel');
+            try {
+                const res = await fetch('/api/backtest/results/' + id, {
+                    headers: {'Authorization':'Bearer '+token}
+                });
+                const r = await res.json();
+                if (!res.ok) { alert(r.detail); return; }
+
+                document.getElementById('detail-title').textContent = strategyName(r.strategy_type) + ' - ' + r.symbol + ' | ' + r.start_date + ' ~ ' + r.end_date;
+                document.getElementById('detail-metrics').innerHTML = `
+                    <div class="metric"><div class="metric-label">总收益率</div><div class="metric-value ${r.total_return >= 0 ? 'pos' : 'neg'}">${fmtPct(r.total_return)}</div></div>
+                    <div class="metric"><div class="metric-label">年化</div><div class="metric-value ${r.annual_return >= 0 ? 'pos' : 'neg'}">${fmtPct(r.annual_return)}</div></div>
+                    <div class="metric"><div class="metric-label">最大回撤</div><div class="metric-value neg">${fmtPct(r.max_drawdown)}</div></div>
+                    <div class="metric"><div class="metric-label">夏普</div><div class="metric-value">${r.sharpe_ratio.toFixed(2)}</div></div>
+                    <div class="metric"><div class="metric-label">交易</div><div class="metric-value">${r.total_trades}</div></div>
+                    <div class="metric"><div class="metric-label">胜率</div><div class="metric-value ${r.win_rate >= 0.5 ? 'pos' : 'neg'}">${fmtPct(r.win_rate)}</div></div>
+                `;
+
+                const ec = r.equity_curve || [];
+                const labels = ec.map(e => (e.date||'').slice(0,10));
+                const equities = ec.map(e => e.equity);
+
+                if (window.detailChartInstance) window.detailChartInstance.destroy();
+                window.detailChartInstance = new Chart(document.getElementById('detailChart'), {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: '权益',
+                            data: equities,
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99,102,241,0.1)',
+                            fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { labels: { color: 'rgba(255,255,255,0.7)' } } },
+                        scales: {
+                            x: { ticks: { color: 'rgba(255,255,255,0.4)', maxTicksLimit: 10 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: { ticks: { color: 'rgba(255,255,255,0.4)' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                        }
+                    }
+                });
+
+                const trades = r.trades || [];
+                const tbody = document.getElementById('detail-trades');
+                tbody.innerHTML = trades.length ? trades.map(t => `
+                    <tr>
+                        <td>${t.date}</td>
+                        <td style="color:${t.action==='buy'?'#22c55e':'#ef4444'}">${t.action==='buy'?'买入':'卖出'}</td>
+                        <td>${t.price.toFixed(2)}</td>
+                        <td>${t.shares}</td>
+                        <td style="color:${t.pnl>=0?'#22c55e':'#ef4444'}">${t.pnl.toFixed(2)}</td>
+                        <td>${t.cumulative_pnl.toFixed(2)}</td>
+                    </tr>
+                `).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px;color:rgba(255,255,255,0.3)">无交易</td></tr>';
+
+                panel.classList.add('visible');
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        function closeDetail() {
+            document.getElementById('detail-panel').classList.remove('visible');
+        }
+
+        async function deleteResult(id) {
+            if (!confirm('确定要删除此回测结果吗？')) return;
+            try {
+                const res = await fetch('/api/backtest/results/' + id, {
+                    method: 'DELETE',
+                    headers: {'Authorization':'Bearer '+token}
+                });
+                if (res.ok) loadResults();
+                else { const d = await res.json(); alert(d.detail); }
+            } catch(e) { console.error(e); }
+        }
+
+        loadResults();
+    </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# 量化回测系统配置文件
+# 请妥善保管账号密码
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  url: "http://119.23.56.57:8000"
+
+admin:
+  username: "root"
+  password: "WEI533400rui"
+
+database:
+  path: "database/quant.db"
+
+# 回测数据源
+data_source:
+  type: "eastmoney"        # 数据来源：eastmoney（东方财富 A 股）
+  default_symbol: "600519" # 默认股票代码（贵州茅台）
+  available_markets:
+    - "A股"  # 输入代码即可，如 600519、000001、300750

@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>量化回测系统 - 回测分析</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a1a;
+            color: #fff;
+            min-height: 100vh;
+        }
+        .sidebar {
+            position: fixed;
+            left: 0; top: 0; bottom: 0;
+            width: 220px;
+            background: rgba(255,255,255,0.03);
+            border-right: 1px solid rgba(255,255,255,0.06);
+            padding: 20px 0;
+        }
+        .sidebar-brand { padding: 0 20px 20px; font-size: 18px; font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 16px; }
+        .sidebar-brand span { color: #6366f1; }
+        .nav-item {
+            display: flex; align-items: center; padding: 12px 20px;
+            color: rgba(255,255,255,0.5); text-decoration: none; font-size: 14px;
+            transition: all 0.2s; cursor: pointer; border: none; background: none; width: 100%; text-align: left;
+        }
+        .nav-item:hover, .nav-item.active { color: #fff; background: rgba(99,102,241,0.1); }
+        .nav-item.active { border-right: 3px solid #6366f1; }
+        .nav-item .icon { margin-right: 10px; font-size: 18px; }
+        .main { margin-left: 220px; padding: 30px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .header h1 { font-size: 24px; }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        .config-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 24px;
+        }
+        .config-card h3 { margin-bottom: 16px; font-size: 16px; }
+        .form-group { margin-bottom: 14px; }
+        .form-group label { display: block; color: rgba(255,255,255,0.6); font-size: 13px; margin-bottom: 5px; }
+        .form-group select, .form-group input {
+            width: 100%;
+            padding: 10px 14px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+        }
+        .form-group select option { background: #1a1a3e; color: #fff; }
+        .form-group input:focus, .form-group select:focus { border-color: rgba(99,102,241,0.5); }
+        .param-group { display: none; }
+        .param-group.active { display: block; }
+
+        .btn-primary {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 25px rgba(99,102,241,0.4); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        .result-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            display: none;
+        }
+        .result-card.visible { display: block; }
+        .result-card h3 { margin-bottom: 16px; font-size: 16px; }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .metric {
+            text-align: center;
+            padding: 16px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .metric-label { color: rgba(255,255,255,0.5); font-size: 12px; margin-bottom: 6px; }
+        .metric-value { font-size: 22px; font-weight: 700; }
+        .metric-value.positive { color: #22c55e; }
+        .metric-value.negative { color: #ef4444; }
+
+        .chart-box {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .chart-box canvas { max-height: 350px; }
+
+        .trade-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .trade-table th, .trade-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .trade-table th { color: rgba(255,255,255,0.5); font-weight: 500; }
+        .buy-color { color: #22c55e; }
+        .sell-color { color: #ef4444; }
+
+        .loading { text-align: center; padding: 40px; color: rgba(255,255,255,0.4); display: none; }
+        .error-msg { color: #ef4444; font-size: 13px; margin-top: 8px; display: none; }
+        .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid rgba(99,102,241,0.2); border-top: 3px solid #6366f1; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="sidebar-brand">📊 <span>量化</span>回测</div>
+        <a class="nav-item" href="/dashboard"><span class="icon">📈</span> 仪表盘</a>
+        <a class="nav-item active" href="/backtest"><span class="icon">🔄</span> 回测分析</a>
+        <a class="nav-item" href="/results"><span class="icon">📋</span> 历史结果</a>
+        <a class="nav-item" href="/strategies"><span class="icon">⚙️</span> 策略管理</a>
+        <hr style="border-color: rgba(255,255,255,0.06); margin: 20px;">
+        <div class="nav-item" onclick="logout()"><span class="icon">🚪</span> 退出</div>
+    </nav>
+
+    <div class="main">
+        <div class="header">
+            <h1>🔄 回测分析</h1>
+            <div class="user-info" style="color:rgba(255,255,255,0.6); font-size:14px;">
+                <span id="username-display"></span>
+            </div>
+        </div>
+
+        <div class="config-grid">
+            <div class="config-card">
+                <h3>回测参数</h3>
+                <div class="form-group">
+                    <label>策略类型</label>
+                    <select id="strategy-type" onchange="updateParams()">
+                        <option value="dual_ma">双均线策略</option>
+                        <option value="rsi">RSI 策略</option>
+                        <option value="macd">MACD 策略</option>
+                        <option value="bollinger">布林带策略</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>标的代码</label>
+                    <input type="text" id="symbol" value="TEST">
+                </div>
+                <div class="form-group">
+                    <label>回测天数</label>
+                    <input type="number" id="days" value="365" min="30" max="1000">
+                </div>
+                <div class="form-group">
+                    <label>初始资金</label>
+                    <input type="number" id="capital" value="100000" min="10000">
+                </div>
+
+                <div class="param-group" id="params-dual_ma">
+                    <div class="form-group">
+                        <label>短期均线周期</label>
+                        <input type="number" id="short-period" value="5" min="2" max="50">
+                    </div>
+                    <div class="form-group">
+                        <label>长期均线周期</label>
+                        <input type="number" id="long-period" value="20" min="5" max="200">
+                    </div>
+                </div>
+                <div class="param-group" id="params-rsi">
+                    <div class="form-group">
+                        <label>RSI 周期</label>
+                        <input type="number" id="rsi-period" value="14" min="5" max="50">
+                    </div>
+                    <div class="form-group">
+                        <label>超卖阈值</label>
+                        <input type="number" id="oversold" value="30" min="10" max="50">
+                    </div>
+                    <div class="form-group">
+                        <label>超买阈值</label>
+                        <input type="number" id="overbought" value="70" min="50" max="90">
+                    </div>
+                </div>
+
+                <button class="btn-primary" id="run-btn" onclick="runBacktest()">
+                    🚀 运行回测
+                </button>
+                <div class="loading" id="loading-indicator">
+                    <span class="spinner"></span> 回测进行中，请稍候...
+                </div>
+                <div class="error-msg" id="error-msg"></div>
+            </div>
+
+            <div class="config-card">
+                <h3>策略说明</h3>
+                <div id="strategy-desc">
+                    <p style="color:rgba(255,255,255,0.6); font-size:14px; line-height:1.8;">
+                        <b style="color:#818cf8;">双均线策略：</b>MA5 上穿 MA20 买入，下穿卖出。趋势跟踪策略，适合趋势行情。<br><br>
+                        <b style="color:#4ade80;">RSI 策略：</b>RSI < 30 超卖买入，RSI > 70 超买卖出。震荡行情有效。<br><br>
+                        <b style="color:#facc15;">MACD 策略：</b>MACD 上穿信号线买入，下穿卖出。经典趋势指标。<br><br>
+                        <b style="color:#f87171;">布林带策略：</b>跌破下轨买入，突破上轨卖出。均值回归策略。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="result-card" id="result-card">
+            <h3>📊 回测结果</h3>
+            <div class="metric-grid" id="metrics"></div>
+            <div class="chart-box">
+                <canvas id="equityChart"></canvas>
+            </div>
+            <div class="chart-box">
+                <h4 style="margin-bottom:12px; font-size:14px; color:rgba(255,255,255,0.7);">交易记录</h4>
+                <div style="max-height:300px; overflow-y:auto;">
+                    <table class="trade-table" id="trade-table">
+                        <thead><tr><th>日期</th><th>操作</th><th>价格</th><th>数量</th><th>盈亏</th><th>累计盈亏</th></tr></thead>
+                        <tbody id="trade-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+        const token = localStorage.getItem('token');
+        if (!token) { window.location.href = '/login'; }
+
+        document.getElementById('username-display').textContent = '👤 ' + (localStorage.getItem('username') || '');
+
+        function logout() { localStorage.clear(); window.location.href = '/login'; }
+
+        function updateParams() {
+            const type = document.getElementById('strategy-type').value;
+            document.querySelectorAll('.param-group').forEach(g => g.classList.remove('active'));
+            const el = document.getElementById('params-' + type);
+            if (el) el.classList.add('active');
+
+            const descs = {
+                dual_ma: '<b style="color:#818cf8;">双均线策略：</b>MA5 上穿 MA20 买入，下穿卖出。趋势跟踪策略，适合趋势行情。',
+                rsi: '<b style="color:#4ade80;">RSI 策略：</b>RSI < 30 超卖买入，RSI > 70 超买卖出。震荡行情有效。',
+                macd: '<b style="color:#facc15;">MACD 策略：</b>MACD 上穿信号线买入，下穿卖出。经典趋势指标。',
+                bollinger: '<b style="color:#f87171;">布林带策略：</b>跌破下轨买入，突破上轨卖出。均值回归策略。'
+            };
+            document.getElementById('strategy-desc').innerHTML = '<p style="color:rgba(255,255,255,0.6); font-size:14px; line-height:1.8;">' + descs[type] + '</p>';
+        }
+        updateParams();
+
+        function getParams() {
+            const type = document.getElementById('strategy-type').value;
+            const p = {};
+            if (type === 'dual_ma') {
+                p.short_period = parseInt(document.getElementById('short-period').value);
+                p.long_period = parseInt(document.getElementById('long-period').value);
+            } else if (type === 'rsi') {
+                p.period = parseInt(document.getElementById('rsi-period').value);
+                p.oversold = parseInt(document.getElementById('oversold').value);
+                p.overbought = parseInt(document.getElementById('overbought').value);
+            }
+            return p;
+        }
+
+        async function runBacktest() {
+            const btn = document.getElementById('run-btn');
+            const loading = document.getElementById('loading-indicator');
+            const errorEl = document.getElementById('error-msg');
+            const resultCard = document.getElementById('result-card');
+            errorEl.style.display = 'none';
+            resultCard.classList.remove('visible');
+
+            btn.disabled = true;
+            loading.style.display = 'block';
+            btn.textContent = '⏳ 回测中...';
+
+            try {
+                const res = await fetch('/api/backtest/run', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({
+                        strategy_type: document.getElementById('strategy-type').value,
+                        symbol: document.getElementById('symbol').value || 'TEST',
+                        days: parseInt(document.getElementById('days').value),
+                        initial_capital: parseFloat(document.getElementById('capital').value),
+                        parameters: getParams()
+                    })
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    errorEl.textContent = data.detail || '回测失败';
+                    errorEl.style.display = 'block';
+                    return;
+                }
+
+                displayResults(data);
+                resultCard.classList.add('visible');
+
+            } catch(e) {
+                errorEl.textContent = '网络错误: ' + e.message;
+                errorEl.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                loading.style.display = 'none';
+                btn.textContent = '🚀 运行回测';
+            }
+        }
+
+        function displayResults(data) {
+            const isPos = data.total_return >= 0;
+
+            document.getElementById('metrics').innerHTML = `
+                <div class="metric">
+                    <div class="metric-label">总收益率</div>
+                    <div class="metric-value ${isPos ? 'positive' : 'negative'}">${(data.total_return * 100).toFixed(2)}%</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">年化收益率</div>
+                    <div class="metric-value ${data.annual_return >= 0 ? 'positive' : 'negative'}">${(data.annual_return * 100).toFixed(2)}%</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">最大回撤</div>
+                    <div class="metric-value negative">${(data.max_drawdown * 100).toFixed(2)}%</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">夏普比率</div>
+                    <div class="metric-value">${data.sharpe_ratio.toFixed(2)}</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">交易次数</div>
+                    <div class="metric-value" style="font-size:20px;">${data.total_trades}</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">胜率</div>
+                    <div class="metric-value ${data.win_rate >= 0.5 ? 'positive' : 'negative'}">${(data.win_rate * 100).toFixed(1)}%</div>
+                </div>
+            `;
+
+            // Equity curve
+            const ec = data.equity_curve || [];
+            const labels = ec.map(e => e.date.slice(0,10));
+            const equities = ec.map(e => e.equity);
+
+            const ctx = document.getElementById('equityChart').getContext('2d');
+            if (window.equityChartInstance) window.equityChartInstance.destroy();
+            window.equityChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '权益曲线',
+                        data: equities,
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99,102,241,0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { labels: { color: 'rgba(255,255,255,0.7)' } }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: 'rgba(255,255,255,0.4)', maxTicksLimit: 10 },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        },
+                        y: {
+                            ticks: { color: 'rgba(255,255,255,0.4)', callback: v => '¥' + v.toLocaleString() },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        }
+                    }
+                }
+            });
+
+            // Trades
+            const trades = data.trades || [];
+            const tbody = document.getElementById('trade-body');
+            if (trades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:rgba(255,255,255,0.3);padding:20px;">无交易记录</td></tr>';
+            } else {
+                tbody.innerHTML = trades.map(t => `
+                    <tr>
+                        <td>${t.date}</td>
+                        <td class="${t.action === 'buy' ? 'buy-color' : 'sell-color'}">${t.action === 'buy' ? '买入' : '卖出'}</td>
+                        <td>${t.price.toFixed(2)}</td>
+                        <td>${t.shares}</td>
+                        <td style="color: ${t.pnl >= 0 ? '#22c55e' : '#ef4444'}">${t.pnl.toFixed(2)}</td>
+                        <td>${t.cumulative_pnl.toFixed(2)}</td>
+                    </tr>
+                `).join('');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>量化回测系统 - 策略管理</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a1a;
+            color: #fff;
+            min-height: 100vh;
+        }
+        .sidebar {
+            position: fixed;
+            left: 0; top: 0; bottom: 0;
+            width: 220px;
+            background: rgba(255,255,255,0.03);
+            border-right: 1px solid rgba(255,255,255,0.06);
+            padding: 20px 0;
+        }
+        .sidebar-brand { padding: 0 20px 20px; font-size: 18px; font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 16px; }
+        .sidebar-brand span { color: #6366f1; }
+        .nav-item {
+            display: flex; align-items: center; padding: 12px 20px;
+            color: rgba(255,255,255,0.5); text-decoration: none; font-size: 14px;
+            transition: all 0.2s; cursor: pointer;
+        }
+        .nav-item:hover, .nav-item.active { color: #fff; background: rgba(99,102,241,0.1); }
+        .nav-item.active { border-right: 3px solid #6366f1; }
+        .nav-item .icon { margin-right: 10px; font-size: 18px; }
+        .main { margin-left: 220px; padding: 30px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .header h1 { font-size: 24px; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+        .card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 24px;
+        }
+        .card h3 { margin-bottom: 16px; font-size: 16px; }
+
+        .builtin-list {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .builtin-item {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        .builtin-item .icon { font-size: 32px; margin-bottom: 8px; }
+        .builtin-item .name { font-weight: 600; font-size: 14px; }
+        .builtin-item .desc { color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 4px; }
+
+        .form-group { margin-bottom: 14px; }
+        .form-group label { display: block; color: rgba(255,255,255,0.6); font-size: 13px; margin-bottom: 5px; }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px 14px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+        }
+        .form-group textarea { resize: vertical; min-height: 60px; }
+        .form-group select option { background: #1a1a3e; }
+
+        .btn-primary {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 25px rgba(99,102,241,0.3); }
+
+        .strategy-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .strategy-table th, .strategy-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .strategy-table th { color: rgba(255,255,255,0.5); font-weight: 500; }
+        .badge {
+            padding: 3px 10px; border-radius: 12px; font-size: 12px;
+        }
+        .badge.dual_ma { background: rgba(99,102,241,0.2); color: #818cf8; }
+        .badge.rsi { background: rgba(34,197,94,0.2); color: #4ade80; }
+        .badge.macd { background: rgba(234,179,8,0.2); color: #facc15; }
+        .badge.bollinger { background: rgba(239,68,68,0.2); color: #f87171; }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: rgba(255,255,255,0.3);
+            font-size: 14px;
+        }
+        .success-msg {
+            color: #22c55e;
+            font-size: 13px;
+            margin-top: 8px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="sidebar-brand">📊 <span>量化</span>回测</div>
+        <a class="nav-item" href="/dashboard"><span class="icon">📈</span> 仪表盘</a>
+        <a class="nav-item" href="/backtest"><span class="icon">🔄</span> 回测分析</a>
+        <a class="nav-item" href="/results"><span class="icon">📋</span> 历史结果</a>
+        <a class="nav-item active" href="/strategies"><span class="icon">⚙️</span> 策略管理</a>
+        <hr style="border-color: rgba(255,255,255,0.06); margin: 20px;">
+        <div class="nav-item" onclick="logout()"><span class="icon">🚪</span> 退出</div>
+    </nav>
+
+    <div class="main">
+        <div class="header">
+            <h1>⚙️ 策略管理</h1>
+            <div><span style="color:rgba(255,255,255,0.6);font-size:14px;" id="username-display"></span></div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3>📦 内置策略</h3>
+                <div class="builtin-list">
+                    <div class="builtin-item">
+                        <div class="icon">📈</div>
+                        <div class="name">双均线策略</div>
+                        <div class="desc">MA5 上穿 MA20 交易</div>
+                    </div>
+                    <div class="builtin-item">
+                        <div class="icon">📊</div>
+                        <div class="name">RSI 策略</div>
+                        <div class="desc">超买超卖信号</div>
+                    </div>
+                    <div class="builtin-item">
+                        <div class="icon">📉</div>
+                        <div class="name">MACD 策略</div>
+                        <div class="desc">趋势跟踪</div>
+                    </div>
+                    <div class="builtin-item">
+                        <div class="icon">📐</div>
+                        <div class="name">布林带策略</div>
+                        <div class="desc">均值回归</div>
+                    </div>
+                </div>
+                <p style="color:rgba(255,255,255,0.3); font-size:12px; margin-top:16px;">内置策略可直接在回测分析中使用</p>
+            </div>
+
+            <div class="card">
+                <h3>➕ 保存自定义策略</h3>
+                <div class="form-group">
+                    <label>策略名称</label>
+                    <input type="text" id="strategy-name" placeholder="例如：我的双均线优化版">
+                </div>
+                <div class="form-group">
+                    <label>策略描述</label>
+                    <textarea id="strategy-desc" placeholder="策略思路说明..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>基础策略类型</label>
+                    <select id="strategy-type">
+                        <option value="dual_ma">双均线策略</option>
+                        <option value="rsi">RSI 策略</option>
+                        <option value="macd">MACD 策略</option>
+                        <option value="bollinger">布林带策略</option>
+                    </select>
+                </div>
+                <button class="btn-primary" onclick="saveStrategy()">💾 保存策略</button>
+                <div class="success-msg" id="save-success">策略保存成功！</div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top:20px; padding:24px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:16px;">
+            <h3 style="margin-bottom:16px;">📚 我的策略</h3>
+            <table class="strategy-table">
+                <thead><tr><th>名称</th><th>类型</th><th>描述</th><th>创建时间</th></tr></thead>
+                <tbody id="strategies-body"></tbody>
+            </table>
+            <div class="empty-state" id="empty-state">暂无保存的自定义策略</div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+        const token = localStorage.getItem('token');
+        if (!token) { window.location.href = '/login'; }
+        document.getElementById('username-display').textContent = '👤 ' + (localStorage.getItem('username') || '');
+
+        function logout() { localStorage.clear(); window.location.href = '/login'; }
+        function strategyName(t) { const m={dual_ma:'双均线',rsi:'RSI',macd:'MACD',bollinger:'布林带'}; return m[t]||t; }
+
+        async function saveStrategy() {
+            const name = document.getElementById('strategy-name').value.trim();
+            if (!name) { alert('请输入策略名称'); return; }
+            try {
+                const res = await fetch('/api/strategies', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
+                    body: JSON.stringify({
+                        name: name,
+                        description: document.getElementById('strategy-desc').value.trim(),
+                        strategy_type: document.getElementById('strategy-type').value,
+                        parameters: {}
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    document.getElementById('strategy-name').value = '';
+                    document.getElementById('strategy-desc').value = '';
+                    const succ = document.getElementById('save-success');
+                    succ.style.display = 'block';
+                    setTimeout(() => succ.style.display = 'none', 2000);
+                    loadStrategies();
+                } else {
+                    alert(data.detail || '保存失败');
+                }
+            } catch(e) { alert('网络错误'); }
+        }
+
+        async function loadStrategies() {
+            try {
+                const res = await fetch('/api/strategies', {
+                    headers: {'Authorization':'Bearer '+token}
+                });
+                const data = await res.json();
+                const list = data.strategies || [];
+                const tbody = document.getElementById('strategies-body');
+                const empty = document.getElementById('empty-state');
+
+                if (list.length === 0) {
+                    tbody.innerHTML = '';
+                    empty.style.display = 'block';
+                    return;
+                }
+                empty.style.display = 'none';
+                tbody.innerHTML = list.map(s => `
+                    <tr>
+                        <td style="font-weight:600;">${s.name}</td>
+                        <td><span class="badge ${s.strategy_type}">${strategyName(s.strategy_type)}</span></td>
+                        <td style="color:rgba(255,255,255,0.5);">${s.description || '-'}</td>
+                        <td style="font-size:12px;color:rgba(255,255,255,0.4)">${s.created_at ? s.created_at.slice(0,10) : ''}</td>
+                    </tr>
+                `).join('');
+            } catch(e) { console.error(e); }
+        }
+
+        loadStrategies();
+    </script>
+</body>
+</html>
