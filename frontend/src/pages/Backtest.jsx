@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../AuthContext'
 import { backtest } from '../api'
 import { useNavigate } from 'react-router-dom'
+import KLineChart from '../components/KLineChart'
+import EquityCurveChart from '../components/EquityCurveChart'
 
 const STRATEGIES = [
   { id: 'dual_ma', name: '双均线策略', desc: '短期均线上穿长期均线买入，下穿卖出', params: [
@@ -32,8 +34,30 @@ export default function Backtest() {
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
+  const [klineData, setKlineData] = useState(null)
+  const [klineLoading, setKlineLoading] = useState(false)
 
   const currentStrategy = STRATEGIES.find(s => s.id === strategyId)
+
+  // 输入股票代码后自动加载 K 线数据
+  useEffect(() => {
+    if (!symbol.trim() || symbol.length < 6) return
+    const timer = setTimeout(async () => {
+      setKlineLoading(true)
+      try {
+        const res = await fetch(`/api/market/kline?symbol=${symbol.trim()}&days=${days}`)
+        if (res.ok) {
+          const data = await res.json()
+          setKlineData(data.klines)
+        }
+      } catch {
+        // 忽略自动加载失败
+      } finally {
+        setKlineLoading(false)
+      }
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [symbol, days])
 
   const handleParamChange = (key, value) => {
     setParams(prev => ({ ...prev, [key]: Number(value) }))
@@ -224,18 +248,41 @@ export default function Backtest() {
       {/* 右侧结果区 */}
       <div style={{ flex: 1, minWidth: 0 }}>
         {!result ? (
-          <div className="card" style={{
-            padding: 60,
-            textAlign: 'center',
-            color: '#595e6b',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 12,
-          }}>
-            <div style={{ fontSize: 48 }}>📊</div>
-            <div style={{ fontSize: 16, color: '#8b949e' }}>左侧配置参数后点击运行回测</div>
-            <div style={{ fontSize: 13 }}>数据源：东方财富 A 股实时行情</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* K 线图 */}
+            <div className="card" style={{ padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ fontSize: 15, color: '#e6edf3' }}>
+                  {symbol || '股票代码'} K 线图
+                </h3>
+                {klineLoading && <span style={{ color: '#8b949e', fontSize: 12 }}>加载中...</span>}
+              </div>
+              {klineData ? (
+                <KLineChart data={klineData} height={450} />
+              ) : (
+                <div style={{
+                  height: 450,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#595e6b',
+                  gap: 8,
+                }}>
+                  <div style={{ fontSize: 36 }}>📊</div>
+                  <div style={{ color: '#8b949e' }}>输入股票代码后自动加载行情</div>
+                  <div style={{ fontSize: 12 }}>示例：600519（茅台）、000001（平安）</div>
+                </div>
+              )}
+            </div>
+            {/* 空状态提示 */}
+            <div className="card" style={{
+              padding: 40,
+              textAlign: 'center',
+              color: '#595e6b',
+            }}>
+              <div style={{ fontSize: 14 }}>左侧配置策略参数，点击运行回测查看结果</div>
+            </div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -262,6 +309,18 @@ export default function Backtest() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* 权益曲线 */}
+            <div className="card" style={{ padding: 16 }}>
+              <h3 style={{ fontSize: 15, color: '#e6edf3', marginBottom: 12 }}>权益曲线</h3>
+              {result.equity_curve && result.equity_curve.length > 0 ? (
+                <EquityCurveChart data={result.equity_curve} height={250} />
+              ) : (
+                <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#595e6b' }}>
+                  无权益数据
+                </div>
+              )}
             </div>
 
             {/* 交易列表 */}

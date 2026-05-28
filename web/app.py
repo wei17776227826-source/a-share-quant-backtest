@@ -231,6 +231,32 @@ async def run_backtest(
         raise HTTPException(status_code=500, detail="回测执行失败: {}".format(str(e)))
 
 
+# ===== 行情数据 API =====
+
+@app.get("/api/market/kline")
+async def get_kline(symbol: str, days: int = 365):
+    """获取 K 线数据"""
+    try:
+        loader = DataLoader()
+        df = loader.fetch_real_data(symbol, days)
+        klines = []
+        for _, row in df.iterrows():
+            klines.append({
+                "date": str(row["date"])[:10],
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": int(row["volume"]),
+                "ma5": float(row["MA5"]) if pd.notna(row.get("MA5")) else None,
+                "ma10": float(row["MA10"]) if pd.notna(row.get("MA10")) else None,
+                "ma20": float(row["MA20"]) if pd.notna(row.get("MA20")) else None,
+            })
+        return {"symbol": symbol, "klines": klines, "total": len(klines)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/api/backtest/results")
 async def list_results(
     limit: int = 20,
