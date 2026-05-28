@@ -8,6 +8,7 @@ import Results from './pages/Results'
 import Dashboard from './pages/Dashboard'
 import Documents from './pages/Documents'
 import Marketplace from './pages/Marketplace'
+import Workflow from './pages/Workflow'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="documents" element={<Documents />} />
             <Route path="marketplace" element={<Marketplace />} />
+            <Route path="workflow" element={<Workflow />} />
           </Route>
         </Routes>
       </BrowserRouter>

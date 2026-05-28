@@ -4,8 +4,10 @@ import { useAuth } from '../AuthContext'
 const navLinks = [
   { path: '/', label: '首页', icon: '🏠' },
   { path: '/marketplace', label: '策略超市', icon: '🏪' },
+  { path: '/workflow', label: '工作流', icon: '🔧' },
   { path: '/backtest', label: '回测', icon: '📊' },
-  { path: '/dashboard', label: '数据看板', icon: '📈' },
+  { path: '/results', label: '结果', icon: '📋' },
+  { path: '/dashboard', label: '看板', icon: '📈' },
   { path: '/documents', label: '文档', icon: '📄' },
 ]
 
