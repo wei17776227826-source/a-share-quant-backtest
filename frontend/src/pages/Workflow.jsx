@@ -14,7 +14,7 @@ import '@xyflow/react/dist/style.css'
 import NodePalette from '../workflow/NodePalette'
 import ConfigPanel from '../workflow/ConfigPanel'
 import BaseNode from '../workflow/NodeComponent'
-import { nodeTypes as nodeDefs, nodeDimensions, generateBacktestRequest } from '../workflow/nodes'
+import { nodeTypes as nodeDefs, nodeDimensions, generateBacktestRequest, isValidConnection, validateFlow } from '../workflow/nodes'
 import { backtest } from '../api'
 import { useAuth } from '../AuthContext'
 
@@ -53,8 +53,32 @@ function WorkflowInner() {
   const [error, setError] = useState('')
 
   const onConnect = useCallback(
-    (params) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges]
+    (params) => {
+      // 验证连接是否合法
+      const sourceEdge = edges.find(e => e.source === params.source && e.sourceHandle === params.sourceHandle)
+      if (sourceEdge) {
+        // 同一个输出端口不能有多个连接
+        return
+      }
+      setEdges((eds) => addEdge({ ...params, animated: true }, eds))
+    },
+    [setEdges, edges]
+  )
+
+  const onConnectValidation = useCallback(
+    (connection) => {
+      // 连线校验
+      const sourceNode = nodes.find(n => n.id === connection.source)
+      const targetNode = nodes.find(n => n.id === connection.target)
+      if (!sourceNode || !targetNode) return false
+      return isValidConnection(
+        sourceNode.type,
+        connection.sourceHandle,
+        targetNode.type,
+        connection.targetHandle
+      )
+    },
+    [nodes]
   )
 
   const onDragOver = useCallback((event) => {
@@ -112,6 +136,14 @@ function WorkflowInner() {
 
   const handleRun = async () => {
     if (!user) return
+
+    // 先做数据流完整性校验
+    const issues = validateFlow(nodes, edges)
+    if (issues.length > 0) {
+      setError('数据流不完整：\n' + issues.join('\n'))
+      return
+    }
+
     setRunning(true)
     setError('')
     setResult(null)
@@ -169,6 +201,7 @@ function WorkflowInner() {
           onDragOver={onDragOver}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
+          isValidConnection={onConnectValidation}
           nodeTypes={customNodeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
           fitView

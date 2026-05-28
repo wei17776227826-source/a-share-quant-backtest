@@ -90,6 +90,62 @@ export const nodeDimensions = {
   result: { width: 220, height: 100 },
 }
 
+// 连线验证 - 判断两个节点能否连接
+// 规则：source 的输出类型必须匹配 target 的输入类型
+const compatiblePorts = {
+  ohlcv: ['ohlcv'],      // ohlcv 只能连 ohlcv
+  features: ['features'], // features 只能连 features
+  signals: ['signals'],   // signals 只能连 signals
+  result: ['result'],     // result 只能连 result
+}
+
+export function isValidConnection(sourceType, sourcePort, targetType, targetPort) {
+  const sourceDef = nodeTypes[sourceType]
+  const targetDef = nodeTypes[targetType]
+  if (!sourceDef || !targetDef) return false
+
+  // 检查输出端口是否存在
+  if (!sourceDef.outputs.includes(sourcePort)) return false
+  // 检查输入端口是否存在
+  if (!targetDef.inputs.includes(targetPort)) return false
+
+  // 检查端口兼容性
+  const compatible = compatiblePorts[sourcePort]
+  if (!compatible || !compatible.includes(targetPort)) return false
+
+  return true
+}
+
+// 检查画布上的数据流是否完整（从数据源到结果节点的完整链路）
+export function validateFlow(nodes, edges) {
+  const issues = []
+
+  // 1. 检查是否有必需节点
+  const hasSource = nodes.some(n => n.type === 'dataSource')
+  const hasStrategy = nodes.some(n => n.type === 'strategy')
+  const hasBacktest = nodes.some(n => n.type === 'backtest')
+
+  if (nodes.length > 0 && !hasSource) issues.push('缺少数据源节点')
+  if (nodes.length > 0 && !hasStrategy) issues.push('缺少策略节点')
+  if (nodes.length > 0 && !hasBacktest) issues.push('缺少回测引擎节点')
+
+  // 2. 检查是否有孤立节点（没有连线的节点）
+  if (nodes.length > 1) {
+    const connectedNodeIds = new Set()
+    edges.forEach(e => {
+      connectedNodeIds.add(e.source)
+      connectedNodeIds.add(e.target)
+    })
+    nodes.forEach(n => {
+      if (!connectedNodeIds.has(n.id) && n.type !== 'dataSource') {
+        issues.push(`"${nodeTypes[n.type]?.label}" 节点未连接`)
+      }
+    })
+  }
+
+  return issues
+}
+
 // 从画布配置生成回测 API 请求参数
 export function generateBacktestRequest(nodes, edges) {
   // 找数据源节点
