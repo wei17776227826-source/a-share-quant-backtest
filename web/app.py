@@ -480,6 +480,81 @@ async def delete_strategy(
     return {"message": "删除成功"}
 
 
+# ===== 数据看板 API =====
+
+@app.get("/api/dashboard/summary")
+async def dashboard_summary(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """获取看板统计数据"""
+    user = get_current_user(db, token)
+    results = get_user_backtests(db, user.id, limit=100)
+
+    total_backtests = len(results)
+    total_strategies = len(get_user_strategies(db, user.id))
+
+    # 统计收益
+    returns = [r.total_return for r in results if r.total_return is not None]
+    avg_return = sum(returns) / len(returns) if returns else 0
+    best_return = max(returns) if returns else 0
+    worst_return = min(returns) if returns else 0
+    positive_count = sum(1 for r in returns if r > 0)
+    win_rate = positive_count / len(returns) * 100 if returns else 0
+
+    # 最近5条回测
+    recent = []
+    for r in results[:5]:
+        recent.append({
+            "id": r.id,
+            "symbol": r.symbol,
+            "strategy_name": STRATEGY_NAMES.get(r.strategy_type, r.strategy_type),
+            "total_return": r.total_return,
+            "total_trades": r.total_trades,
+            "created_at": str(r.created_at)[:10],
+        })
+
+    # 按策略类型分组收益
+    type_returns = {}
+    for r in results:
+        name = STRATEGY_NAMES.get(r.strategy_type, r.strategy_type)
+        if name not in type_returns:
+            type_returns[name] = []
+        if r.total_return is not None:
+            type_returns[name].append(r.total_return)
+
+    strategy_perf = [
+        {"name": name, "avg_return": round(sum(v)/len(v)*100, 2), "count": len(v)}
+        for name, v in type_returns.items()
+    ]
+
+    # 按股票统计
+    symbol_returns = {}
+    for r in results:
+        sym = r.symbol or "未知"
+        if sym not in symbol_returns:
+            symbol_returns[sym] = []
+        if r.total_return is not None:
+            symbol_returns[sym].append(r.total_return)
+
+    symbol_perf = [
+        {"symbol": sym, "avg_return": round(sum(v)/len(v)*100, 2), "count": len(v)}
+        for sym, v in sorted(symbol_returns.items(), key=lambda x: sum(x[1])/len(x[1]), reverse=True)[:10]
+    ]
+
+    return {
+        "total_backtests": total_backtests,
+        "total_strategies": total_strategies,
+        "avg_return": round(avg_return * 100, 2),
+        "best_return": round(best_return * 100, 2),
+        "worst_return": round(worst_return * 100, 2),
+        "win_rate": round(win_rate, 1),
+        "recent": recent,
+        "strategy_perf": strategy_perf,
+        "symbol_perf": symbol_perf,
+    }
+
+
 # ===== 启动 =====
 if __name__ == "__main__":
     import uvicorn
