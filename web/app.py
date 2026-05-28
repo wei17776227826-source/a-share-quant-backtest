@@ -35,6 +35,11 @@ from engine.strategy_base import (
 
 app = FastAPI(title="量化回测系统", version="2.0.0")
 
+# 挂载 React 前端构建产物
+frontend_dist = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
+if os.path.exists(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="frontend_assets")
+
 # 挂载静态文件和模板
 templates_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 templates = Jinja2Templates(directory=templates_dir)
@@ -101,40 +106,20 @@ class UpdateStrategyRequest(BaseModel):
 
 # ===== API 路由 =====
 
-@app.get("/")
-async def root():
-    """重定向到登录页面"""
-    return RedirectResponse(url="/login")
+# React SPA - 返回前端入口页面
+frontend_index = os.path.join(frontend_dist, "index.html") if os.path.exists(frontend_dist) else None
 
-
-@app.get("/login")
-async def login_page(request: Request):
-    """登录页面"""
+@app.get("/{full_path:path}")
+async def serve_frontend(full_path: str, request: Request):
+    # API 请求不处理（由其他路由匹配）
+    if full_path.startswith("api/") or full_path.startswith("assets/"):
+        raise HTTPException(status_code=404)
+    # 返回 React index.html
+    if frontend_index and os.path.exists(frontend_index):
+        from starlette.responses import FileResponse
+        return FileResponse(frontend_index)
+    # 回退到 Jinja2 模板
     return templates.TemplateResponse("index.html", {"request": request})
-
-
-@app.get("/dashboard")
-async def dashboard_page(request: Request):
-    """仪表盘页面"""
-    return templates.TemplateResponse("dashboard.html", {"request": request})
-
-
-@app.get("/backtest")
-async def backtest_page(request: Request):
-    """回测页面"""
-    return templates.TemplateResponse("backtest.html", {"request": request})
-
-
-@app.get("/results")
-async def results_page(request: Request):
-    """结果页面"""
-    return templates.TemplateResponse("results.html", {"request": request})
-
-
-@app.get("/strategies")
-async def strategies_page(request: Request):
-    """策略管理页面"""
-    return templates.TemplateResponse("strategies.html", {"request": request})
 
 
 # ===== 认证 API =====
