@@ -22,7 +22,9 @@ from web.auth import (
 from web.database import (
     get_db, get_user_by_username, create_user,
     save_backtest_result, get_user_backtests, get_backtest_by_id,
-    save_strategy, get_user_strategies, get_strategy_by_id
+    save_strategy, get_user_strategies, get_strategy_by_id,
+    update_strategy as update_strategy_db,
+    delete_strategy as delete_strategy_db,
 )
 from database.models import User
 from engine.data_loader import DataLoader
@@ -84,8 +86,17 @@ class RunBacktestRequest(BaseModel):
 class SaveStrategyRequest(BaseModel):
     name: str
     description: str = ""
-    strategy_type: str
+    strategy_type: str = "dual_ma"
     parameters: dict = {}
+    workflow_config: str = "{}"  # 画布配置 JSON 字符串
+
+
+class UpdateStrategyRequest(BaseModel):
+    name: str = None
+    description: str = None
+    strategy_type: str = None
+    parameters: dict = None
+    workflow_config: str = None
 
 
 # ===== API 路由 =====
@@ -359,6 +370,7 @@ async def create_strategy(
         description=req.description,
         strategy_type=req.strategy_type,
         parameters=json.dumps(req.parameters),
+        workflow_config=req.workflow_config,
     )
     return {
         "id": s.id,
@@ -366,7 +378,9 @@ async def create_strategy(
         "description": s.description,
         "strategy_type": s.strategy_type,
         "parameters": req.parameters,
+        "workflow_config": json.loads(s.workflow_config) if isinstance(s.workflow_config, str) else s.workflow_config,
         "created_at": str(s.created_at),
+        "updated_at": str(s.updated_at) if s.updated_at else None,
     }
 
 
@@ -387,6 +401,7 @@ async def list_strategies(
             "strategy_type": s.strategy_type,
             "parameters": json.loads(s.parameters) if s.parameters else {},
             "created_at": str(s.created_at),
+            "updated_at": str(s.updated_at) if s.updated_at else None,
         })
     return {"strategies": data}
 
@@ -410,8 +425,59 @@ async def get_strategy(
         "description": s.description,
         "strategy_type": s.strategy_type,
         "parameters": json.loads(s.parameters) if s.parameters else {},
+        "workflow_config": json.loads(s.workflow_config) if isinstance(s.workflow_config, str) and s.workflow_config != "{}" else {},
         "created_at": str(s.created_at),
+        "updated_at": str(s.updated_at) if s.updated_at else None,
     }
+
+
+@app.put("/api/strategies/{strategy_id}")
+async def update_strategy(
+    strategy_id: int,
+    req: UpdateStrategyRequest,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """更新策略"""
+    user = get_current_user(db, token)
+    update_data = {}
+    if req.name is not None:
+        update_data["name"] = req.name
+    if req.description is not None:
+        update_data["description"] = req.description
+    if req.strategy_type is not None:
+        update_data["strategy_type"] = req.strategy_type
+    if req.parameters is not None:
+        update_data["parameters"] = json.dumps(req.parameters)
+    if req.workflow_config is not None:
+        update_data["workflow_config"] = req.workflow_config
+
+    result = update_strategy_db(db, strategy_id, user.id, **update_data)
+    if result is None:
+        raise HTTPException(status_code=404, detail="策略不存在或无权限")
+    return {
+        "id": result.id,
+        "name": result.name,
+        "description": result.description,
+        "strategy_type": result.strategy_type,
+        "parameters": json.loads(result.parameters) if result.parameters else {},
+        "workflow_config": json.loads(result.workflow_config) if isinstance(result.workflow_config, str) and result.workflow_config != "{}" else {},
+        "updated_at": str(result.updated_at) if result.updated_at else None,
+    }
+
+
+@app.delete("/api/strategies/{strategy_id}")
+async def delete_strategy(
+    strategy_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """删除策略"""
+    user = get_current_user(db, token)
+    success = delete_strategy_db(db, strategy_id, user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="策略不存在或无权限")
+    return {"message": "删除成功"}
 
 
 # ===== 启动 =====

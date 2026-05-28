@@ -67,4 +67,10 @@ export const strategies = {
 
   detail: (id) =>
     api.get(`/strategies/${id}`).then(r => r.data),
+
+  update: (id, data) =>
+    api.put(`/strategies/${id}`, data).then(r => r.data),
+
+  delete: (id) =>
+    api.delete(`/strategies/${id}`).then(r => r.data),
 }

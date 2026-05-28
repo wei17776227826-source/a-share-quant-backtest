@@ -86,3 +86,30 @@ def get_user_strategies(db, user_id):
 def get_strategy_by_id(db, strategy_id):
     """通过 ID 获取策略"""
     return db.query(Strategy).filter(Strategy.id == strategy_id).first()
+
+
+def update_strategy(db, strategy_id, user_id, **kwargs):
+    """更新策略"""
+    strategy = db.query(Strategy).filter(
+        Strategy.id == strategy_id, Strategy.user_id == user_id
+    ).first()
+    if not strategy:
+        return None
+    for key, value in kwargs.items():
+        if hasattr(strategy, key):
+            setattr(strategy, key, value)
+    db.commit()
+    db.refresh(strategy)
+    return strategy
+
+
+def delete_strategy(db, strategy_id, user_id):
+    """删除策略"""
+    strategy = db.query(Strategy).filter(
+        Strategy.id == strategy_id, Strategy.user_id == user_id
+    ).first()
+    if not strategy:
+        return False
+    db.delete(strategy)
+    db.commit()
+    return True

@@ -67,11 +67,13 @@ class Strategy(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
 
     name = Column(String)
-    description = Column(String)
-    strategy_type = Column(String)
-    parameters = Column(Text)  # JSON
+    description = Column(String, default="")
+    strategy_type = Column(String, default="dual_ma")
+    parameters = Column(Text, default="{}")  # JSON
+    workflow_config = Column(Text, default="{}")  # 画布配置 JSON
 
     created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     # 关联
     user = relationship("User", back_populates="strategies")
@@ -81,6 +83,9 @@ class Strategy(Base):
 
 
 if __name__ == "__main__":
-    engine = create_engine("sqlite:///quant.db")
+    import os
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quant.db")
+    engine = create_engine(f"sqlite:///{db_path}")
     Base.metadata.create_all(bind=engine)
     print("数据库表创建完成！")
+    print(f"数据库路径: {db_path}")
