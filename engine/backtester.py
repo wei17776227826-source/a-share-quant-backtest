@@ -62,27 +62,9 @@ class Backtester:
 
             signal = signals[i]
 
-            # 处理买入信号（空仓时买入）
-            if signal == 1 and position == 0:
-                # 全仓买入
-                shares = int(capital // current_price)
-                if shares > 0:
-                    cost = shares * current_price
-                    capital -= cost
-                    position = shares
-                    position_cost = current_price
-
-                    trades.append({
-                        'date': str(current_date),
-                        'action': 'buy',
-                        'price': round(current_price, 2),
-                        'shares': shares,
-                        'pnl': 0.0,
-                        'cumulative_pnl': cumulative_pnl
-                    })
-
-            # 处理卖出信号（持仓时卖出）
-            elif signal == -1 and position > 0:
+            # ---- 先处理卖出信号 ----
+            # 支持 -1（普通卖出）和 -2（卖出后今日还要买入）
+            if (signal in (-1, -2)) and position > 0:
                 sell_value = position * current_price
                 pnl = sell_value - (position * position_cost)
                 cumulative_pnl += pnl
@@ -100,6 +82,25 @@ class Backtester:
 
                 position = 0
                 position_cost = 0.0
+
+            # ---- 再处理买入信号 ----
+            if (signal in (1, -2)) and position == 0:
+                # 全仓买入
+                shares = int(capital // current_price)
+                if shares > 0:
+                    cost = shares * current_price
+                    capital -= cost
+                    position = shares
+                    position_cost = current_price
+
+                    trades.append({
+                        'date': str(current_date),
+                        'action': 'buy',
+                        'price': round(current_price, 2),
+                        'shares': shares,
+                        'pnl': 0.0,
+                        'cumulative_pnl': cumulative_pnl
+                    })
 
             # 计算当前权益
             current_equity = capital + position * current_price

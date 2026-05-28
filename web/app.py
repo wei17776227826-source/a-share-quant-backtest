@@ -30,7 +30,7 @@ from database.models import User
 from engine.data_loader import DataLoader
 from engine.backtester import Backtester
 from engine.strategy_base import (
-    DualMAStrategy, RSIStrategy, MACDStrategy, BollingerStrategy
+    DualMAStrategy, RSIStrategy, MACDStrategy, BollingerStrategy, OMSStrategy
 )
 
 app = FastAPI(title="量化回测系统", version="2.0.0")
@@ -57,6 +57,12 @@ STRATEGY_MAP = {
     ),
     "macd": lambda p: MACDStrategy(),
     "bollinger": lambda p: BollingerStrategy(),
+    "oms": lambda p: OMSStrategy(
+        change_low=float(p.get("change_low", 3.0)),
+        change_high=float(p.get("change_high", 5.0)),
+        volume_ratio_min=float(p.get("volume_ratio_min", 1.0)),
+        volume_stack_ratio=float(p.get("volume_stack_ratio", 1.2)),
+    ),
 }
 
 STRATEGY_NAMES = {
@@ -64,6 +70,7 @@ STRATEGY_NAMES = {
     "rsi": "RSI 策略",
     "macd": "MACD 策略",
     "bollinger": "布林带策略",
+    "oms": "尾盘动量隔夜策略",
 }
 
 

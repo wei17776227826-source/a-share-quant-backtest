@@ -31,6 +31,16 @@ const STRATEGY_CONFIGS = {
     desc: '价格触及下轨买入，触及上轨卖出',
     params: [],
   },
+  oms: {
+    name: '尾盘动量隔夜策略',
+    desc: '14:30 尾盘选股，8步筛选强势股，次日冲高卖出。源自 github.com/hunkguo/overnight_momentum_strategy',
+    params: [
+      { key: 'change_low', label: '涨跌幅下限(%)', default: 3.0, min: 1, max: 8, step: 0.5 },
+      { key: 'change_high', label: '涨跌幅上限(%)', default: 5.0, min: 2, max: 10, step: 0.5 },
+      { key: 'volume_ratio_min', label: '量比下限', default: 1.0, min: 0.5, max: 3, step: 0.1 },
+      { key: 'volume_stack_ratio', label: '持续放量倍率', default: 1.2, min: 1.0, max: 2.0, step: 0.05 },
+    ],
+  },
 }
 
 export default function Marketplace() {
@@ -289,6 +299,7 @@ export default function Marketplace() {
                           type="range"
                           min={p.min}
                           max={p.max}
+                          step={p.step || 1}
                           value={form.parameters[p.key] || p.default}
                           onChange={e => setForm({ ...form, parameters: { ...form.parameters, [p.key]: Number(e.target.value) } })}
                           style={{ width: '100%', accentColor: '#58a6ff' }}
