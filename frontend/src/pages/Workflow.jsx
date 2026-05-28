@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   ReactFlow,
   addEdge,
@@ -15,6 +15,7 @@ import NodePalette from '../workflow/NodePalette'
 import ConfigPanel from '../workflow/ConfigPanel'
 import BaseNode from '../workflow/NodeComponent'
 import { nodeTypes as nodeDefs, nodeDimensions, generateBacktestRequest, isValidConnection, validateFlow } from '../workflow/nodes'
+import { saveToLocal, loadAll, loadByName, deleteByName, generateFileName } from '../workflow/storage'
 import { backtest } from '../api'
 import { useAuth } from '../AuthContext'
 
@@ -183,6 +184,39 @@ function WorkflowInner() {
     setError('')
   }
 
+  // 保存/加载状态
+  const [savedList, setSavedList] = useState([])
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [saveName, setSaveName] = useState('')
+  const [showLoadModal, setShowLoadModal] = useState(false)
+
+  useEffect(() => {
+    setSavedList(Object.values(loadAll()))
+  }, [showLoadModal, showSaveModal])
+
+  const handleSave = () => {
+    const name = saveName || generateFileName()
+    saveToLocal(name, nodes, edges)
+    setShowSaveModal(false)
+    setSaveName('')
+  }
+
+  const handleLoad = (name) => {
+    const data = loadByName(name)
+    if (data) {
+      setNodes(data.nodes)
+      setEdges(data.edges)
+      setResult(null)
+      setError('')
+      setShowLoadModal(false)
+    }
+  }
+
+  const handleDelete = (name) => {
+    deleteByName(name)
+    setSavedList(Object.values(loadAll()))
+  }
+
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 56px)' }}>
       {/* 左侧节点库 */}
@@ -236,12 +270,105 @@ function WorkflowInner() {
           </button>
           <button
             className="btn btn-ghost"
+            style={{ fontSize: 13 }}
+            onClick={() => { setSaveName(''); setShowSaveModal(true) }}
+            disabled={nodes.length === 0}
+          >
+            💾 保存
+          </button>
+          <button
+            className="btn btn-ghost"
+            style={{ fontSize: 13 }}
+            onClick={() => setShowLoadModal(true)}
+          >
+            📂 加载
+          </button>
+          <button
+            className="btn btn-ghost"
             style={{ fontSize: 13, color: '#f85149', borderColor: 'rgba(248,81,73,0.3)' }}
             onClick={handleClear}
           >
             清空画布
           </button>
         </div>
+
+        {/* 保存模态框 */}
+        {showSaveModal && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 100,
+          }}>
+            <div className="card" style={{ width: 360, padding: 24 }}>
+              <h3 style={{ fontSize: 16, color: '#e6edf3', marginBottom: 16 }}>保存策略</h3>
+              <input
+                className="input"
+                value={saveName}
+                onChange={e => setSaveName(e.target.value)}
+                placeholder={generateFileName()}
+                autoFocus
+              />
+              <div style={{ fontSize: 11, color: '#595e6b', marginTop: 4 }}>留空使用自动生成名称</div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSave}>保存</button>
+                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setShowSaveModal(false)}>取消</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 加载模态框 */}
+        {showLoadModal && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 100,
+          }}>
+            <div className="card" style={{ width: 400, padding: 24, maxHeight: 400, overflow: 'auto' }}>
+              <h3 style={{ fontSize: 16, color: '#e6edf3', marginBottom: 16 }}>加载策略</h3>
+              {savedList.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#595e6b', padding: 20 }}>
+                  暂无已保存的策略
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {savedList.map(s => (
+                    <div key={s.name} style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '10px 14px',
+                      borderRadius: 8,
+                      border: '1px solid #2d3343',
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 14, color: '#e6edf3' }}>{s.name}</div>
+                        <div style={{ fontSize: 11, color: '#595e6b' }}>
+                          {new Date(s.savedAt).toLocaleString('zh-CN')} · {s.nodes?.length || 0} 个节点
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => handleLoad(s.name)}>
+                          加载
+                        </button>
+                        <button className="btn btn-ghost" style={{ padding: '4px 12px', fontSize: 12, color: '#f85149' }} onClick={() => handleDelete(s.name)}>
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button className="btn btn-ghost" style={{ width: '100%', marginTop: 12 }} onClick={() => setShowLoadModal(false)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 错误提示 */}
         {error && (
