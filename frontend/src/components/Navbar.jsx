@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useAuth } from '../AuthContext'
 
 const navLinks = [
   { path: '/', label: '首页', icon: '🏠' },
@@ -10,6 +11,7 @@ const navLinks = [
 
 export default function Navbar() {
   const location = useLocation()
+  const { user, logout } = useAuth()
 
   return (
     <nav style={{
@@ -75,12 +77,40 @@ export default function Navbar() {
 
       {/* 右侧操作区 */}
       <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
-        <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: 13 }}>
-          + 创建策略
-        </button>
-        <button className="btn btn-ghost" style={{ padding: '6px 16px', fontSize: 13 }}>
-          登录
-        </button>
+        {user ? (
+          <>
+            <Link to="/backtest">
+              <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: 13 }}>
+                + 创建策略
+              </button>
+            </Link>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: '#8b949e', fontSize: 13 }}>
+                {user.username}
+              </span>
+              <button
+                onClick={logout}
+                className="btn btn-ghost"
+                style={{ padding: '4px 12px', fontSize: 12 }}
+              >
+                退出
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <Link to="/backtest">
+              <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: 13 }}>
+                + 创建策略
+              </button>
+            </Link>
+            <Link to="/login">
+              <button className="btn btn-ghost" style={{ padding: '6px 16px', fontSize: 13 }}>
+                登录
+              </button>
+            </Link>
+          </>
+        )}
       </div>
     </nav>
   )
