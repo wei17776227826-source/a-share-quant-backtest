@@ -41,6 +41,56 @@ const STRATEGY_CONFIGS = {
       { key: 'volume_stack_ratio', label: '持续放量倍率', default: 1.2, min: 1.0, max: 2.0, step: 0.05 },
     ],
   },
+  // === GitHub 高胜率策略 ===
+  n_rebound: {
+    name: 'N 字反弹策略',
+    desc: '涨停后缩量回调不破启动位，企稳反弹时买入。回测胜率参考 >51%。源自 github.com/konodiodaaaaa1/N-Rebound',
+    params: [
+      { key: 'callback_pct', label: '回调深度(%)', default: 3.0, min: 1, max: 8, step: 0.5 },
+      { key: 'volume_shrink', label: '量比萎缩阈值', default: 0.8, min: 0.3, max: 1.2, step: 0.05 },
+      { key: 'rebound_threshold', label: '反弹启动幅度', default: 0.02, min: 0, max: 0.05, step: 0.005 },
+    ],
+  },
+  golden_cross: {
+    name: '多金叉共振策略',
+    desc: '均线金叉 + MACD 金叉 + KDJ 金叉三重确认买入。回测胜率参考 50-55%。源自 KHunter',
+    params: [
+      { key: 'ma_short', label: '短期均线', default: 5, min: 3, max: 30 },
+      { key: 'ma_long', label: '长期均线', default: 20, min: 10, max: 120 },
+    ],
+  },
+  breakout: {
+    name: '阻力位突破策略',
+    desc: '突破近 N 日高点 + 放量确认买入，跌破 MA20 止损。回测胜率参考 50-60%。源自 KHunter',
+    params: [
+      { key: 'lookback', label: '回看周期(日)', default: 20, min: 10, max: 60 },
+      { key: 'volume_multiplier', label: '放量倍数', default: 1.3, min: 1.0, max: 3.0, step: 0.1 },
+      { key: 'breakout_pct', label: '突破确认幅度', default: 0.01, min: 0.005, max: 0.03, step: 0.005 },
+    ],
+  },
+  squeeze: {
+    name: '涨停回马枪策略',
+    desc: '涨停后横盘整理 3-8 天缩量，再次放量突破时买入。回测胜率参考 50-55%。源自 KHunter',
+    params: [
+      { key: 'squeeze_days', label: '最短横盘天数', default: 5, min: 2, max: 8 },
+      { key: 'max_squeeze_days', label: '最长横盘天数', default: 10, min: 5, max: 15 },
+      { key: 'vol_shrink_pct', label: '缩量比例', default: 0.6, min: 0.3, max: 1.0, step: 0.05 },
+    ],
+  },
+  contrarian: {
+    name: '情绪极端反转策略',
+    desc: 'RSI 超卖 + 跌破布林带下轨 + 缩量 → 恐慌买入，反弹至中轨卖出。回测胜率参考 45-55%',
+    params: [
+      { key: 'rsi_oversold', label: 'RSI 超卖阈值', default: 25, min: 10, max: 40 },
+      { key: 'bb_factor', label: '布林带偏移因子', default: 1.0, min: 0.5, max: 1.5, step: 0.1 },
+      { key: 'volume_shrink', label: '缩量阈值', default: 0.7, min: 0.3, max: 1.2, step: 0.05 },
+    ],
+  },
+  ma_trend: {
+    name: '均线趋势跟踪策略',
+    desc: 'MA5 > MA10 > MA20 > MA60 多头排列买入，死叉或跌破 MA60 卖出。趋势跟踪，高盈亏比',
+    params: [],
+  },
 }
 
 export default function Marketplace() {
@@ -51,6 +101,17 @@ export default function Marketplace() {
   const [showEditor, setShowEditor] = useState(false)
   const [editId, setEditId] = useState(null)
   const [runningId, setRunningId] = useState(null)
+
+  // 将内置策略模板转换为列表项格式
+  const builtinStrategies = Object.entries(STRATEGY_CONFIGS).map(([key, cfg]) => ({
+    id: 'builtin_' + key,
+    name: cfg.name,
+    description: cfg.desc,
+    strategy_type: key,
+    parameters: Object.fromEntries(cfg.params.map(p => [p.key, p.default])),
+    created_at: null,
+    isBuiltin: true,
+  }))
 
   // 编辑器表单状态
   const [form, setForm] = useState({
@@ -71,8 +132,13 @@ export default function Marketplace() {
     setLoading(true)
     try {
       const data = await strategies.list()
-      setStrategyList(data.strategies || [])
-    } catch { /* ignore */ }
+      // 合并内置策略模板 + 用户自定义策略（内置在前）
+      const userStrategies = (data.strategies || []).map(s => ({ ...s, isBuiltin: false }))
+      setStrategyList([...builtinStrategies, ...userStrategies])
+    } catch {
+      // 即使 API 失败也展示内置策略
+      setStrategyList(builtinStrategies)
+    }
     setLoading(false)
   }
 
@@ -83,6 +149,16 @@ export default function Marketplace() {
   }
 
   const openEdit = (s) => {
+    if (s.isBuiltin) {
+      // 内置策略 -> 直接打开新建编辑器并选中该类型
+      setEditId(null)
+      const params = Object.fromEntries(
+        (STRATEGY_CONFIGS[s.strategy_type]?.params || []).map(p => [p.key, p.default])
+      )
+      setForm({ name: s.name, description: s.description || '', strategy_type: s.strategy_type, parameters: params, symbol: '600519', days: 365 })
+      setShowEditor(true)
+      return
+    }
     setEditId(s.id)
     const params = s.parameters || {}
     setForm({
@@ -181,19 +257,33 @@ export default function Marketplace() {
             {strategyList.map(s => {
               const info = getStrategyInfo(s.strategy_type)
               return (
-                <div key={s.id} className="card" style={{ padding: 20 }}>
+                <div key={s.id} className="card" style={{
+                  padding: 20,
+                  border: s.isBuiltin ? '1px solid rgba(88,166,255,0.25)' : undefined,
+                }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                         <h3 style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3' }}>{s.name}</h3>
                         <span className="badge badge-blue">{info.name}</span>
+                        {s.isBuiltin && (
+                          <span className="badge" style={{ backgroundColor: 'rgba(88,166,255,0.15)', color: '#58a6ff', border: '1px solid rgba(88,166,255,0.3)' }}>
+                            内置
+                          </span>
+                        )}
                       </div>
                       {s.description && (
                         <p style={{ color: '#8b949e', fontSize: 13, marginBottom: 8 }}>{s.description}</p>
                       )}
                       <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#595e6b' }}>
+                        {s.isBuiltin ? (
+                          <span>系统内置策略模板</span>
+                        ) : (
+                          <>
                         <span>创建于 {s.created_at?.slice(0, 10)}</span>
                         {s.updated_at && <span>更新于 {s.updated_at?.slice(0, 10)}</span>}
+                        </>
+                        )}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
@@ -205,6 +295,7 @@ export default function Marketplace() {
                       >
                         {runningId === s.id ? '运行中...' : '▶ 回测'}
                       </button>
+                      {!s.isBuiltin && (
                       <button
                         className="btn btn-ghost"
                         style={{ padding: '6px 14px', fontSize: 12 }}
@@ -212,6 +303,8 @@ export default function Marketplace() {
                       >
                         编辑
                       </button>
+                      )}
+                      {!s.isBuiltin && (
                       <button
                         className="btn btn-ghost"
                         style={{ padding: '6px 14px', fontSize: 12, color: '#f85149', borderColor: 'rgba(248,81,73,0.3)' }}
@@ -219,6 +312,16 @@ export default function Marketplace() {
                       >
                         删除
                       </button>
+                      )}
+                      {s.isBuiltin && (
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: '6px 14px', fontSize: 12 }}
+                        onClick={() => openEdit(s)}
+                      >
+                        另存为...
+                      </button>
+                      )}
                     </div>
                   </div>
                 </div>

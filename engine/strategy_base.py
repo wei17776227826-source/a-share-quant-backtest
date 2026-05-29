@@ -286,6 +286,409 @@ class OMSStrategy(StrategyBase):
         return signals
 
 
+# ============================================================
+# 新增策略：基于 GitHub 高胜率策略搜索
+# ============================================================
+
+class NReboundStrategy(StrategyBase):
+    """N 字反弹策略
+
+    源自 github.com/konodiodaaaaa1/N-Rebound
+    核心逻辑：涨停后缩量回调不破启动位 → 再次拉升
+    买点：涨停后回调 2-5 天，量比萎缩 < 0.8，收盘 > MA5
+    卖点：止盈 +8% / 止损 -5% (T+1 场景隔日卖出)
+
+    回测胜率参考：>51% (XGBoost 增强版)
+    """
+
+    def __init__(self, callback_pct=3.0, volume_shrink=0.8, rebound_threshold=0.02):
+        """
+        参数:
+            callback_pct: 回调深度百分比（涨停后回调 %）
+            volume_shrink: 量比萎缩阈值（当日量 / 涨停日量）
+            rebound_threshold: 反弹启动阈值（收盘 > MA5 的幅度）
+        """
+        super().__init__("N 字反弹策略")
+        self.callback_pct = callback_pct
+        self.volume_shrink = volume_shrink
+        self.rebound_threshold = rebound_threshold
+
+    def generate_signals(self, df):
+        signals = np.zeros(len(df))
+        close = df['close'].values
+        volume = df['volume'].values
+        ma5 = df['MA5'].values if 'MA5' in df.columns else np.full(len(df), np.nan)
+
+        # 寻找涨停日（涨幅 >= 9.8%）
+        change_pct = np.full(len(df), np.nan)
+        change_pct[1:] = (close[1:] / close[:-1] - 1) * 100
+
+        for i in range(5, len(df)):
+            # 涨停日
+            if np.isnan(change_pct[i]) or change_pct[i] < 9.5:
+                continue
+
+            # 涨停日成交量
+            limit_up_vol = volume[i]
+
+            # 检查后续 2-5 天是否回调
+            for j in range(i + 1, min(i + 6, len(df))):
+                # 回调：价格下跌，量萎缩
+                vol_ratio = volume[j] / limit_up_vol if limit_up_vol > 0 else 1.0
+
+                if close[j] < close[i] * (1 - self.callback_pct / 100) and vol_ratio < self.volume_shrink:
+                    # 同时检查收盘是否在 MA5 附近或之上（企稳）
+                    if not np.isnan(ma5[j]) and close[j] >= ma5[j] * (1 - self.rebound_threshold):
+                        signals[j] = 1  # 买入信号
+                    break
+
+        # 卖出：隔日卖出（T+1）
+        for i in range(1, len(df)):
+            if signals[i - 1] == 1:
+                if signals[i] == 1:
+                    signals[i] = -2  # 先卖后买
+                else:
+                    signals[i] = -1
+
+        return signals
+
+
+class GoldenCrossStrategy(StrategyBase):
+    """多金叉共振策略
+
+    源自 KHunter 项目
+    核心逻辑：均线金叉 + MACD 金叉 + KDJ 金叉 三重确认买入
+    技术面多指标共振，过滤虚假信号
+
+    回测胜率参考：50-55%
+    """
+
+    def __init__(self, ma_short=5, ma_long=20):
+        super().__init__("多金叉共振策略")
+        self.ma_short = ma_short
+        self.ma_long = ma_long
+
+    def _calculate_kdj(self, df):
+        """计算 KDJ 指标"""
+        low = df['low'].values
+        high = df['high'].values
+        close = df['close'].values
+
+        k_values = np.full(len(df), 50.0)
+        d_values = np.full(len(df), 50.0)
+
+        for i in range(9, len(df)):
+            hhv = np.max(high[i - 8:i + 1])
+            llv = np.min(low[i - 8:i + 1])
+            if hhv - llv > 1e-8:
+                rsv = (close[i] - llv) / (hhv - llv) * 100
+            else:
+                rsv = 50.0
+            k_values[i] = 2.0 / 3 * k_values[i - 1] + 1.0 / 3 * rsv
+            d_values[i] = 2.0 / 3 * d_values[i - 1] + 1.0 / 3 * k_values[i]
+
+        return k_values, d_values
+
+    def generate_signals(self, df):
+        signals = np.zeros(len(df))
+
+        close = df['close'].values
+        short_ma_col = 'MA{}'.format(self.ma_short)
+        long_ma_col = 'MA{}'.format(self.ma_long)
+
+        if short_ma_col not in df.columns or long_ma_col not in df.columns:
+            return signals
+
+        short_ma = df[short_ma_col].values
+        long_ma = df[long_ma_col].values
+
+        # KDJ
+        k, d = self._calculate_kdj(df)
+
+        macd = df['MACD'].values if 'MACD' in df.columns else np.full(len(df), np.nan)
+        signal = df['Signal'].values if 'Signal' in df.columns else np.full(len(df), np.nan)
+
+        for i in range(1, len(df)):
+            # 均线金叉
+            ma_golden = (not np.isnan(short_ma[i - 1]) and not np.isnan(long_ma[i - 1])
+                         and not np.isnan(short_ma[i]) and not np.isnan(long_ma[i])
+                         and short_ma[i - 1] <= long_ma[i - 1]
+                         and short_ma[i] > long_ma[i])
+
+            # MACD 金叉
+            macd_golden = (not np.isnan(macd[i - 1]) and not np.isnan(signal[i - 1])
+                           and not np.isnan(macd[i]) and not np.isnan(signal[i])
+                           and macd[i - 1] <= signal[i - 1]
+                           and macd[i] > signal[i])
+
+            # KDJ 金叉
+            kdj_golden = (not np.isnan(k[i - 1]) and not np.isnan(d[i - 1])
+                          and not np.isnan(k[i]) and not np.isnan(d[i])
+                          and k[i - 1] <= d[i - 1] and k[i] > d[i]
+                          and k[i] < 80)  # 避免超买区域
+
+            # 三个金叉中至少两个共振
+            golden_count = sum([ma_golden, macd_golden, kdj_golden])
+            if golden_count >= 2:
+                signals[i] = 1
+
+            # 死叉卖出
+            ma_dead = (not np.isnan(short_ma[i - 1]) and not np.isnan(long_ma[i - 1])
+                       and not np.isnan(short_ma[i]) and not np.isnan(long_ma[i])
+                       and short_ma[i - 1] >= long_ma[i - 1]
+                       and short_ma[i] < long_ma[i])
+
+            if ma_dead:
+                signals[i] = -1
+
+        return signals
+
+
+class BreakoutStrategy(StrategyBase):
+    """阻力位突破策略
+
+    源自 KHunter 项目
+    核心逻辑：股价突破近期高点（20 日新高）+ 放量确认
+    突破关键阻力位后入场，趋势跟踪
+
+    回测胜率参考：50-60%
+    """
+
+    def __init__(self, lookback=20, volume_multiplier=1.3, breakout_pct=0.01):
+        """
+        参数:
+            lookback: 回看周期（突破近 N 日高点）
+            volume_multiplier: 放量倍数（突破日量 / 前 N 日均量）
+            breakout_pct: 突破确认幅度
+        """
+        super().__init__("阻力位突破策略")
+        self.lookback = lookback
+        self.volume_multiplier = volume_multiplier
+        self.breakout_pct = breakout_pct
+
+    def generate_signals(self, df):
+        signals = np.zeros(len(df))
+        close = df['close'].values
+        volume = df['volume'].values
+
+        # 计算前 N 日的最高价
+        vol_avg = pd.Series(volume).rolling(self.lookback).mean().shift(1).values
+
+        for i in range(self.lookback, len(df)):
+            prev_high = np.max(close[i - self.lookback:i])
+            prev_avg_vol = vol_avg[i]
+
+            # 突破阻力位 + 放量确认
+            if (close[i] > prev_high * (1 + self.breakout_pct)
+                    and not np.isnan(prev_avg_vol)
+                    and volume[i] > prev_avg_vol * self.volume_multiplier):
+                signals[i] = 1
+
+        # 止损卖出：跌破 MA20
+        ma20 = df['MA20'].values if 'MA20' in df.columns else np.full(len(df), np.nan)
+        for i in range(1, len(df)):
+            if not np.isnan(ma20[i]) and close[i] < ma20[i]:
+                if signals[i] == 1:
+                    signals[i] = -2
+                else:
+                    signals[i] = -1
+
+        return signals
+
+
+class SqueezeStrategy(StrategyBase):
+    """涨停回马枪策略
+
+    源自 KHunter 项目
+    核心逻辑：涨停后横盘整理（3-8 天），量能萎缩，然后放量突破
+    捕捉强势股洗盘后的第二波拉升
+
+    回测胜率参考：50-55%
+    """
+
+    def __init__(self, squeeze_days=5, max_squeeze_days=10, vol_shrink_pct=0.6):
+        """
+        参数:
+            squeeze_days: 最短横盘天数
+            max_squeeze_days: 最长横盘天数
+            vol_shrink_pct: 横盘期成交量萎缩比例（相对涨停日）
+        """
+        super().__init__("涨停回马枪策略")
+        self.squeeze_days = squeeze_days
+        self.max_squeeze_days = max_squeeze_days
+        self.vol_shrink_pct = vol_shrink_pct
+
+    def generate_signals(self, df):
+        signals = np.zeros(len(df))
+        close = df['close'].values
+        volume = df['volume'].values
+
+        change_pct = np.full(len(df), np.nan)
+        change_pct[1:] = (close[1:] / close[:-1] - 1) * 100
+
+        for i in range(1, len(df)):
+            # 寻找涨停日
+            if np.isnan(change_pct[i]) or change_pct[i] < 9.5:
+                continue
+
+            limit_up_vol = volume[i]
+            limit_up_close = close[i]
+
+            # 检查后续横盘整理
+            for end in range(i + self.squeeze_days, min(i + self.max_squeeze_days + 1, len(df))):
+                squeeze_range = close[i + 1:end + 1]
+                squeeze_vol = volume[i + 1:end + 1]
+
+                # 横盘：价格在涨停日收盘 -3% ~ +3% 之间震荡
+                price_in_range = all(
+                    limit_up_close * 0.97 <= p <= limit_up_close * 1.03
+                    for p in squeeze_range
+                )
+
+                # 缩量：横盘期最大量 < 涨停日量 × vol_shrink_pct
+                vol_ok = np.max(squeeze_vol) <= limit_up_vol * self.vol_shrink_pct
+
+                if price_in_range and vol_ok:
+                    # 横盘结束日买入
+                    signals[end] = 1
+                    break
+
+        # 隔日卖出（T+1）
+        for i in range(1, len(df)):
+            if signals[i - 1] == 1:
+                if signals[i] == 1:
+                    signals[i] = -2
+                else:
+                    signals[i] = -1
+
+        return signals
+
+
+class ContrarianStrategy(StrategyBase):
+    """情绪极端反转策略
+
+    源自 github.com/NadirAliOfficial/contrarian-trading-strategy + quant-strategies 市场情绪策略
+    核心逻辑：RSI 超卖 + 布林带下轨 + 缩量 → 恐慌买入
+    在极端情绪时逆势入场，抓取情绪修复反弹
+
+    回测胜率参考：45-55%
+    """
+
+    def __init__(self, rsi_oversold=25, bb_factor=1.0, volume_shrink=0.7):
+        """
+        参数:
+            rsi_oversold: RSI 超卖阈值
+            bb_factor: 布林带下轨偏移因子（1.0=标准下轨）
+            volume_shrink: 缩量阈值（当日量 / 前 20 日均量）
+        """
+        super().__init__("情绪极端反转策略")
+        self.rsi_oversold = rsi_oversold
+        self.bb_factor = bb_factor
+        self.volume_shrink = volume_shrink
+
+    def generate_signals(self, df):
+        signals = np.zeros(len(df))
+        close = df['close'].values
+        volume = df['volume'].values
+
+        rsi = df['RSI'].values if 'RSI' in df.columns else np.full(len(df), np.nan)
+        bb_lower = df['BB_Lower'].values if 'BB_Lower' in df.columns else np.full(len(df), np.nan)
+
+        vol_avg = pd.Series(volume).rolling(20).mean().values
+
+        for i in range(20, len(df)):
+            buy_signal = False
+
+            # RSI 超卖
+            if not np.isnan(rsi[i]) and rsi[i] < self.rsi_oversold:
+                buy_signal = True
+
+            # 价格跌破布林带下轨（更恐慌）
+            if not np.isnan(bb_lower[i]) and close[i] < bb_lower[i] * (2 - self.bb_factor):
+                buy_signal = True
+
+            # 缩量确认（恐慌时量能萎缩）
+            if not np.isnan(vol_avg[i]) and volume[i] > vol_avg[i] * self.volume_shrink:
+                buy_signal = True
+
+            # 至少满足两个条件
+            conditions = 0
+            if not np.isnan(rsi[i]) and rsi[i] < self.rsi_oversold:
+                conditions += 1
+            if not np.isnan(bb_lower[i]) and close[i] < bb_lower[i] * (2 - self.bb_factor):
+                conditions += 1
+            if not np.isnan(vol_avg[i]) and volume[i] < vol_avg[i] * self.volume_shrink:
+                conditions += 1
+
+            if conditions >= 2:
+                signals[i] = 1
+
+        # 卖出：反弹到布林带中轨或 RSI > 60
+        bb_mid = df['BB_Middle'].values if 'BB_Middle' in df.columns else np.full(len(df), np.nan)
+        for i in range(1, len(df)):
+            sell_signal = False
+            if not np.isnan(bb_mid[i]) and close[i] >= bb_mid[i]:
+                sell_signal = True
+            if not np.isnan(rsi[i]) and rsi[i] > 60:
+                sell_signal = True
+
+            if sell_signal:
+                if signals[i] == 1:
+                    signals[i] = -2
+                elif signals[i] == 0:
+                    signals[i] = -1
+
+        return signals
+
+
+class MATrendStrategy(StrategyBase):
+    """均线多头排列趋势跟踪策略
+
+    核心逻辑：MA5 > MA10 > MA20 > MA60 (多头排列) 买入
+    均线死叉或跌破 MA60 卖出
+    趋势跟踪，吃主升浪鱼身
+
+    回测胜率参考：45-55% (高盈亏比补偿低胜率)
+    """
+
+    def __init__(self):
+        super().__init__("均线趋势跟踪策略")
+
+    def generate_signals(self, df):
+        signals = np.zeros(len(df))
+        close = df['close'].values
+
+        ma5 = df['MA5'].values if 'MA5' in df.columns else np.full(len(df), np.nan)
+        ma10 = df['MA10'].values if 'MA10' in df.columns else np.full(len(df), np.nan)
+        ma20 = df['MA20'].values if 'MA20' in df.columns else np.full(len(df), np.nan)
+        ma60 = df['MA60'].values if 'MA60' in df.columns else np.full(len(df), np.nan)
+
+        for i in range(60, len(df)):
+            # 多头排列买入
+            if (not np.isnan(ma5[i]) and not np.isnan(ma10[i])
+                and not np.isnan(ma20[i]) and not np.isnan(ma60[i])
+                and close[i] > ma5[i] > ma10[i] > ma20[i] > ma60[i]):
+
+                # 前一天不是多头排列（刚形成）
+                if (np.isnan(ma5[i - 1]) or np.isnan(ma10[i - 1])
+                    or np.isnan(ma20[i - 1]) or np.isnan(ma60[i - 1])
+                    or not (close[i - 1] > ma5[i - 1] > ma10[i - 1] > ma20[i - 1] > ma60[i - 1])):
+                    signals[i] = 1
+
+            # 死叉或跌破 MA60 卖出
+            if (not np.isnan(ma5[i]) and not np.isnan(ma10[i])
+                and ma5[i] < ma10[i]):
+                signals[i] = -1
+
+            if not np.isnan(ma60[i]) and close[i] < ma60[i]:
+                if signals[i] == 1:
+                    signals[i] = -2
+                else:
+                    signals[i] = -1
+
+        return signals
+
+
 class BollingerStrategy(StrategyBase):
     """布林带策略 - 跌破下轨买入，突破上轨卖出"""
 

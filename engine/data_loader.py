@@ -5,7 +5,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from .eastmoney_data import fetch_from_eastmoney
+from .eastmoney_data import fetch_data as fetch_from_eastmoney
 
 
 class DataLoader:

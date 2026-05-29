@@ -28,10 +28,14 @@ from web.database import (
 )
 from database.models import User
 from engine.data_loader import DataLoader
-from engine.backtester import Backtester
+from engine.backtester import Backtester, MultiAssetBacktester
 from engine.strategy_base import (
-    DualMAStrategy, RSIStrategy, MACDStrategy, BollingerStrategy, OMSStrategy
+    DualMAStrategy, RSIStrategy, MACDStrategy, BollingerStrategy, OMSStrategy,
+    NReboundStrategy, GoldenCrossStrategy, BreakoutStrategy,
+    SqueezeStrategy, ContrarianStrategy, MATrendStrategy,
 )
+from engine.stock_pool import get_all_stocks
+from engine.market_scanner import MarketScanner
 
 app = FastAPI(title="量化回测系统", version="2.0.0")
 
@@ -63,6 +67,32 @@ STRATEGY_MAP = {
         volume_ratio_min=float(p.get("volume_ratio_min", 1.0)),
         volume_stack_ratio=float(p.get("volume_stack_ratio", 1.2)),
     ),
+    # === GitHub 高胜率策略 ===
+    "n_rebound": lambda p: NReboundStrategy(
+        callback_pct=float(p.get("callback_pct", 3.0)),
+        volume_shrink=float(p.get("volume_shrink", 0.8)),
+        rebound_threshold=float(p.get("rebound_threshold", 0.02)),
+    ),
+    "golden_cross": lambda p: GoldenCrossStrategy(
+        ma_short=int(p.get("ma_short", 5)),
+        ma_long=int(p.get("ma_long", 20)),
+    ),
+    "breakout": lambda p: BreakoutStrategy(
+        lookback=int(p.get("lookback", 20)),
+        volume_multiplier=float(p.get("volume_multiplier", 1.3)),
+        breakout_pct=float(p.get("breakout_pct", 0.01)),
+    ),
+    "squeeze": lambda p: SqueezeStrategy(
+        squeeze_days=int(p.get("squeeze_days", 5)),
+        max_squeeze_days=int(p.get("max_squeeze_days", 10)),
+        vol_shrink_pct=float(p.get("vol_shrink_pct", 0.6)),
+    ),
+    "contrarian": lambda p: ContrarianStrategy(
+        rsi_oversold=int(p.get("rsi_oversold", 25)),
+        bb_factor=float(p.get("bb_factor", 1.0)),
+        volume_shrink=float(p.get("volume_shrink", 0.7)),
+    ),
+    "ma_trend": lambda p: MATrendStrategy(),
 }
 
 STRATEGY_NAMES = {
@@ -71,6 +101,12 @@ STRATEGY_NAMES = {
     "macd": "MACD 策略",
     "bollinger": "布林带策略",
     "oms": "尾盘动量隔夜策略",
+    "n_rebound": "N 字反弹策略",
+    "golden_cross": "多金叉共振策略",
+    "breakout": "阻力位突破策略",
+    "squeeze": "涨停回马枪策略",
+    "contrarian": "情绪极端反转策略",
+    "ma_trend": "均线趋势跟踪策略",
 }
 
 
@@ -95,6 +131,17 @@ class RunBacktestRequest(BaseModel):
     data_source: str = "real"  # "real" 真实数据, "sample" 模拟数据
 
 
+class RunOMSScanRequest(BaseModel):
+    """OMS 全市场扫描回测请求"""
+    days: int = 20
+    initial_capital: float = 100000.0
+    max_stocks: int = 20
+    change_low: float = 3.0
+    change_high: float = 5.0
+    volume_ratio_min: float = 1.0
+    volume_stack_ratio: float = 1.2
+
+
 class SaveStrategyRequest(BaseModel):
     name: str
     description: str = ""
@@ -112,21 +159,6 @@ class UpdateStrategyRequest(BaseModel):
 
 
 # ===== API 路由 =====
-
-# React SPA - 返回前端入口页面
-frontend_index = os.path.join(frontend_dist, "index.html") if os.path.exists(frontend_dist) else None
-
-@app.get("/{full_path:path}")
-async def serve_frontend(full_path: str, request: Request):
-    # API 请求不处理（由其他路由匹配）
-    if full_path.startswith("api/") or full_path.startswith("assets/"):
-        raise HTTPException(status_code=404)
-    # 返回 React index.html
-    if frontend_index and os.path.exists(frontend_index):
-        from starlette.responses import FileResponse
-        return FileResponse(frontend_index)
-    # 回退到 Jinja2 模板
-    return templates.TemplateResponse("index.html", {"request": request})
 
 
 # ===== 认证 API =====
@@ -232,6 +264,95 @@ async def run_backtest(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail="回测执行失败: {}".format(str(e)))
+
+
+@ app.post("/api/backtest/oms-scan")
+async def run_oms_scan(
+    req: RunOMSScanRequest,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """运行 OMS 全市场扫描回测"""
+    user = get_current_user(db, token)
+
+    try:
+        # 1. 获取全市场股票列表
+        print("正在获取全市场 A 股列表...")
+        stocks = get_all_stocks()
+        if not stocks:
+            raise HTTPException(status_code=500, detail="获取全市场股票列表失败")
+
+        # 2. 创建扫描器和回测引擎
+        scanner = MarketScanner(cache_enabled=True)
+        oms_params = {
+            'change_low': req.change_low,
+            'change_high': req.change_high,
+            'volume_ratio_min': req.volume_ratio_min,
+            'volume_stack_ratio': req.volume_stack_ratio,
+        }
+
+        backtester = MultiAssetBacktester(
+            scanner=scanner,
+            stock_pool=stocks,
+            initial_capital=req.initial_capital,
+            oms_params=oms_params,
+            max_stocks=req.max_stocks,
+        )
+
+        # 3. 运行回测
+        result = backtester.run(days=req.days)
+
+        # 4. 保存到数据库（使用 oms_scan 作为 strategy_type）
+        start_date = ""
+        end_date = ""
+        if result['equity_curve'] and len(result['equity_curve']) > 1:
+            start_date = result['equity_curve'][0]['date']
+            end_date = result['equity_curve'][-1]['date']
+
+        saved = save_backtest_result(
+            db, user_id=user.id,
+            strategy_type='oms_scan',
+            symbol='ALL(全市场扫描)',
+            start_date=start_date,
+            end_date=end_date,
+            initial_capital=req.initial_capital,
+            parameters=json.dumps({
+                'days': req.days,
+                'max_stocks': req.max_stocks,
+                'change_low': req.change_low,
+                'change_high': req.change_high,
+                'volume_ratio_min': req.volume_ratio_min,
+                'volume_stack_ratio': req.volume_stack_ratio,
+            }),
+            total_return=result['total_return'],
+            annual_return=result['annual_return'],
+            max_drawdown=result['max_drawdown'],
+            sharpe_ratio=result['sharpe_ratio'],
+            total_trades=result['total_trades'],
+            win_rate=result['win_rate'],
+            trades=json.dumps(result['trades']),
+            equity_curve=json.dumps(result['equity_curve']),
+        )
+
+        return {
+            "id": saved.id,
+            "strategy_name": "全市场 OMS 扫描策略",
+            "strategy_type": "oms_scan",
+            "symbol": "ALL(全市场扫描)",
+            "stock_count": len(stocks),
+            "total_return": result['total_return'],
+            "annual_return": result['annual_return'],
+            "max_drawdown": result['max_drawdown'],
+            "sharpe_ratio": result['sharpe_ratio'],
+            "total_trades": result['total_trades'],
+            "win_rate": result['win_rate'],
+            "trades": result['trades'],
+            "equity_curve": result['equity_curve'],
+            "created_at": str(saved.created_at),
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="全市场扫描回测失败: {}".format(str(e)))
 
 
 # ===== 行情数据 API =====
@@ -545,6 +666,24 @@ async def dashboard_summary(
         "strategy_perf": strategy_perf,
         "symbol_perf": symbol_perf,
     }
+
+
+# ===== React SPA - 通配路由放末尾，确保 API 路由优先匹配 =====
+frontend_index = os.path.join(frontend_dist, "index.html") if os.path.exists(frontend_dist) else None
+
+
+@app.api_route("/{full_path:path}", methods=["GET"])
+async def serve_frontend(full_path: str, request: Request):
+    # API 和 assets 请求不处理，由更具体的路由匹配
+    if full_path.startswith("api/") or full_path.startswith("assets/"):
+        from starlette.responses import Response
+        return Response(status_code=404)
+    # 返回 React index.html
+    if frontend_index and os.path.exists(frontend_index):
+        from starlette.responses import FileResponse
+        return FileResponse(frontend_index)
+    # 回退到 Jinja2 模板
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 # ===== 启动 =====
