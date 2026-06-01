@@ -4,15 +4,16 @@ import { useAuth } from '../AuthContext'
 import api from '../api'
 
 export default function Dashboard() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (authLoading) return
     if (!user) { navigate('/login'); return }
     loadData()
-  }, [user])
+  }, [user, authLoading])
 
   const loadData = async () => {
     setLoading(true)

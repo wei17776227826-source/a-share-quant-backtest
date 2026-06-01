@@ -125,7 +125,7 @@ class LoginRequest(BaseModel):
 class RunBacktestRequest(BaseModel):
     strategy_type: str
     symbol: str = "TEST"
-    days: int = 365
+    days: int = 30
     initial_capital: float = 100000.0
     parameters: dict = {}
     data_source: str = "real"  # "real" 真实数据, "sample" 模拟数据

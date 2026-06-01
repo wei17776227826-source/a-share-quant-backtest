@@ -1,23 +1,27 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { backtest } from '../api'
+import { createChart, ColorType, LineSeries, AreaSeries, LineStyle } from 'lightweight-charts'
 
 export default function Results() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(true)
   const [detailId, setDetailId] = useState(null)
   const [detail, setDetail] = useState(null)
+  const chartRef = useRef(null)
+  const chartContainerRef = useRef(null)
 
   useEffect(() => {
+    if (authLoading) return
     if (!user) {
       navigate('/login')
       return
     }
     loadResults()
-  }, [user])
+  }, [user, authLoading])
 
   const loadResults = async () => {
     setLoading(true)
@@ -55,9 +59,123 @@ export default function Results() {
     }
   }
 
+  // 当 detail 变化时绘制收益曲线
+  useEffect(() => {
+    if (!detail?.equity_curve || detail.equity_curve.length < 2) return
+
+    // 清理旧图表
+    if (chartRef.current) {
+      chartRef.current.remove()
+      chartRef.current = null
+    }
+
+    const container = chartContainerRef.current
+    if (!container) return
+
+    const chart = createChart(container, {
+      layout: {
+        background: { type: ColorType.Solid, color: '#0d1117' },
+        textColor: '#8b949e',
+        fontSize: 11,
+      },
+      grid: {
+        vertLines: { color: '#1c2333' },
+        horzLines: { color: '#1c2333' },
+      },
+      width: container.clientWidth,
+      height: 280,
+      crosshair: {
+        vertLine: { color: '#58a6ff', width: 1, style: 2, labelBackgroundColor: '#1c2333' },
+        horzLine: { color: '#58a6ff', width: 1, style: 2, labelBackgroundColor: '#1c2333' },
+      },
+      timeScale: {
+        borderColor: '#2d3343',
+        timeVisible: false,
+        tickMarkFormatter: (ts) => {
+          const d = new Date(ts * 1000)
+          return `${d.getMonth()+1}/${d.getDate()}`
+        },
+      },
+      rightPriceScale: {
+        borderColor: '#2d3343',
+      },
+      handleScroll: false,
+      handleScale: false,
+    })
+
+    // 准备数据
+    const initialCapital = detail.initial_capital || 100000
+    const seriesData = detail.equity_curve.map((p, i) => {
+      // 使用索引作为时间（避免日期解析问题）
+      const baseTs = new Date(detail.start_date || '2024-01-01').getTime() / 1000
+      return {
+        time: Math.floor(baseTs + i * 86400),
+        value: parseFloat(p.equity) || initialCapital,
+      }
+    })
+
+    // 添加基准线（初始资金水平线）
+    const baselineSeries = chart.addSeries(LineSeries, {
+      color: '#2d3343',
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      lastValueVisible: false,
+      priceFormat: { type: 'price', precision: 0, minMove: 1 },
+    })
+    baselineSeries.setData(seriesData.map(d => ({ time: d.time, value: initialCapital })))
+
+    // 主收益曲线
+    const lineSeries = chart.addSeries(LineSeries, {
+      color: '#58a6ff',
+      lineWidth: 2,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 4,
+      crosshairMarkerBackgroundColor: '#58a6ff',
+      priceFormat: { type: 'price', precision: 0, minMove: 1 },
+    })
+    lineSeries.setData(seriesData)
+
+    // 填充区域（渐变）
+    const areaSeries = chart.addSeries(AreaSeries, {
+      lineColor: '#58a6ff',
+      topColor: 'rgba(88,166,255,0.15)',
+      bottomColor: 'rgba(88,166,255,0.01)',
+      lineWidth: 0,
+      priceFormat: { type: 'price', precision: 0, minMove: 1 },
+    })
+    areaSeries.setData(seriesData)
+
+    chart.timeScale().fitContent()
+
+    chartRef.current = chart
+
+    // 窗口大小变化时自适应
+    const handleResize = () => {
+      if (chartRef.current && container) {
+        chartRef.current.applyOptions({ width: container.clientWidth })
+      }
+    }
+    window.addEventListener('resize', handleResize)
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      if (chartRef.current) {
+        chartRef.current.remove()
+        chartRef.current = null
+      }
+    }
+  }, [detail])
+
   const formatDate = (s) => s ? s.slice(0, 10) : '-'
 
   if (!user) return null
+  if (authLoading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 56px)', color: '#595e6b' }}>
+        验证登录中...
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', gap: 24, padding: 24, maxWidth: 1400, margin: '0 auto' }}>
@@ -185,6 +303,19 @@ export default function Results() {
                 {detail.start_date} ~ {detail.end_date} | 初始资金: {(detail.initial_capital || 100000).toLocaleString()}
               </div>
             </div>
+
+            {/* 收益曲线 */}
+            {detail.equity_curve && detail.equity_curve.length >= 2 && (
+              <div className="card" style={{ padding: 20, marginTop: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <h3 style={{ fontSize: 15, color: '#e6edf3' }}>收益曲线</h3>
+                  <div style={{ fontSize: 12, color: '#595e6b' }}>
+                    {detail.start_date} ~ {detail.end_date}
+                  </div>
+                </div>
+                <div ref={chartContainerRef} style={{ width: '100%' }} />
+              </div>
+            )}
 
             {/* 交易记录 */}
             <div className="card" style={{ padding: 20 }}>

@@ -5,7 +5,7 @@
 import numpy as np
 import pandas as pd
 import time
-from .eastmoney_data import fetch_data
+from .tdx_data import fetch_data
 from .data_loader import DataLoader
 
 
@@ -223,7 +223,7 @@ def check_stock_oms(code, days=120, change_low=3.0, change_high=5.0,
         (passed: bool, reason: str, price: float)
     """
     from .data_loader import DataLoader
-    from .eastmoney_data import fetch_data
+    from .tdx_data import fetch_data
 
     df = fetch_data(code, days)
     if df is None or len(df) == 0:

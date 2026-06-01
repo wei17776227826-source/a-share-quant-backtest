@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { createChart } from 'lightweight-charts'
+import { createChart, LineSeries, CandlestickSeries, HistogramSeries, ColorType } from 'lightweight-charts'
 
 export default function KLineChart({ data, height = 400 }) {
   const chartContainerRef = useRef(null)
@@ -8,31 +8,35 @@ export default function KLineChart({ data, height = 400 }) {
   useEffect(() => {
     if (!chartContainerRef.current || !data || data.length === 0) return
 
-    // 创建图表
-    const chart = createChart(chartContainerRef.current, {
+    const container = chartContainerRef.current
+    const chart = createChart(container, {
       layout: {
-        background: { color: '#1a1f2e' },
+        background: { type: ColorType.Solid, color: '#1a1f2e' },
         textColor: '#8b949e',
+        fontSize: 11,
       },
       grid: {
         vertLines: { color: '#2d3343' },
         horzLines: { color: '#2d3343' },
       },
-      crosshair: {
-        mode: 0,
-      },
       timeScale: {
         borderColor: '#2d3343',
+        tickMarkFormatter: (ts) => {
+          const d = new Date(ts * 1000)
+          return `${d.getMonth() + 1}/${d.getDate()}`
+        },
       },
       rightPriceScale: {
         borderColor: '#2d3343',
       },
-      width: chartContainerRef.current.clientWidth,
+      width: container.clientWidth,
       height,
+      handleScroll: false,
+      handleScale: false,
     })
 
     // K 线数据
-    const candleSeries = chart.addCandlestickSeries({
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#3fb950',
       downColor: '#f85149',
       borderDownColor: '#f85149',
@@ -41,21 +45,35 @@ export default function KLineChart({ data, height = 400 }) {
       wickUpColor: '#3fb950',
     })
 
-    const candleData = data.map(d => ({
-      time: d.date,
-      open: d.open,
-      high: d.high,
-      low: d.low,
-      close: d.close,
-    }))
+    const candleData = data.map((d, i) => {
+      // 日期转为时间戳
+      let time = 0
+      if (typeof d.date === 'string') {
+        time = Math.floor(new Date(d.date).getTime() / 1000)
+      } else if (typeof d.date === 'number') {
+        time = d.date
+      } else {
+        time = i
+      }
+      return {
+        time,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+      }
+    })
     candleSeries.setData(candleData)
 
     // MA5 线
     const ma5Data = data
-      .filter(d => d.ma5 !== null)
-      .map(d => ({ time: d.date, value: d.ma5 }))
+      .filter(d => d.ma5 !== null && d.ma5 !== undefined)
+      .map((d, i) => ({
+        time: typeof d.date === 'string' ? Math.floor(new Date(d.date).getTime() / 1000) : i,
+        value: d.ma5,
+      }))
     if (ma5Data.length > 0) {
-      chart.addLineSeries({
+      chart.addSeries(LineSeries, {
         color: '#58a6ff',
         lineWidth: 1,
         lastValueVisible: false,
@@ -65,10 +83,13 @@ export default function KLineChart({ data, height = 400 }) {
 
     // MA10 线
     const ma10Data = data
-      .filter(d => d.ma10 !== null)
-      .map(d => ({ time: d.date, value: d.ma10 }))
+      .filter(d => d.ma10 !== null && d.ma10 !== undefined)
+      .map((d, i) => ({
+        time: typeof d.date === 'string' ? Math.floor(new Date(d.date).getTime() / 1000) : i,
+        value: d.ma10,
+      }))
     if (ma10Data.length > 0) {
-      chart.addLineSeries({
+      chart.addSeries(LineSeries, {
         color: '#d29922',
         lineWidth: 1,
         lastValueVisible: false,
@@ -78,10 +99,13 @@ export default function KLineChart({ data, height = 400 }) {
 
     // MA20 线
     const ma20Data = data
-      .filter(d => d.ma20 !== null)
-      .map(d => ({ time: d.date, value: d.ma20 }))
+      .filter(d => d.ma20 !== null && d.ma20 !== undefined)
+      .map((d, i) => ({
+        time: typeof d.date === 'string' ? Math.floor(new Date(d.date).getTime() / 1000) : i,
+        value: d.ma20,
+      }))
     if (ma20Data.length > 0) {
-      chart.addLineSeries({
+      chart.addSeries(LineSeries, {
         color: '#8b949e',
         lineWidth: 1,
         lastValueVisible: false,
@@ -90,25 +114,24 @@ export default function KLineChart({ data, height = 400 }) {
     }
 
     // 成交量
-    const volumeSeries = chart.addHistogramSeries({
+    const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
       priceScaleId: 'volume',
     })
     chart.priceScale('volume').applyOptions({
       scaleMargins: { top: 0.8, bottom: 0 },
     })
-    volumeSeries.setData(data.map(d => ({
-      time: d.date,
+    volumeSeries.setData(data.map((d, i) => ({
+      time: typeof d.date === 'string' ? Math.floor(new Date(d.date).getTime() / 1000) : i,
       value: d.volume,
       color: d.close >= d.open ? 'rgba(63,185,80,0.3)' : 'rgba(248,81,73,0.3)',
     })))
 
     chartRef.current = chart
 
-    // 自适应宽度
     const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth })
+      if (container) {
+        chart.applyOptions({ width: container.clientWidth })
       }
     }
     window.addEventListener('resize', handleResize)

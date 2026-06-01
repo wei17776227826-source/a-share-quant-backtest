@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-数据加载器 - 支持东方财富 A 股真实数据及生成模拟数据
+数据加载器 - 支持通达信（腾讯HTTPS）A 股真实数据及生成模拟数据
 """
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from .eastmoney_data import fetch_data as fetch_from_eastmoney
+from .tdx_data import fetch_data as fetch_from_tdx
 
 
 class DataLoader:
@@ -16,7 +16,7 @@ class DataLoader:
 
     def fetch_real_data(self, symbol, days=365):
         """
-        获取真实 A 股数据（东方财富接口）
+        获取真实 A 股数据（通达信数据源 - 腾讯 HTTPS 接口）
 
         参数:
             symbol: A 股代码，如 '600519'（茅台）、'000001'（平安银行）
@@ -25,7 +25,7 @@ class DataLoader:
         返回:
             DataFrame with columns: date, open, high, low, close, volume, amount
         """
-        df = fetch_from_eastmoney(symbol, days)
+        df = fetch_from_tdx(symbol, days)
         if df is None:
             raise ValueError(f"未获取到 {symbol} 的数据，请检查股票代码是否正确")
 

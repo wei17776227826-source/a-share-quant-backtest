@@ -13,7 +13,7 @@ import re
 import time
 
 
-def fetch_from_eastmoney(symbol, days=365):
+def fetch_from_eastmoney(symbol, days=30):
     """
     从东方财富 API 获取股票历史数据（主数据源）
 
@@ -158,7 +158,7 @@ def fetch_from_tencent(symbol, days=365):
         return None
 
 
-def fetch_data(symbol, days=365):
+def fetch_data(symbol, days=30):
     """
     获取股票历史数据，带自动 fallback
 
@@ -237,7 +237,7 @@ class ChineseDataLoader:
     """数据加载器 - 支持东方财富 A 股数据（含腾讯 fallback）"""
 
     @staticmethod
-    def fetch_data(symbol, days=365):
+    def fetch_data(symbol, days=30):
         """
         获取真实行情数据
 
