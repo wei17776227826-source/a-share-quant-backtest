@@ -1,36 +1,113 @@
 # -*- coding: utf-8 -*-
 """
-数据加载器 - 支持通达信（腾讯HTTPS）A 股真实数据及生成模拟数据
+数据加载器 - 支持多数据源 A 股真实数据及生成模拟数据
+
+支持的数据源：
+  - 'tencent'（默认）: 通达信数据源（腾讯 HTTPS 接口），阿里云 ECS 可用
+  - 'baostock': Baostock 免费开源数据，国内服务器友好
+  - 'eastmoney': 东方财富数据源（阿里云 ECS 可能被拦截）
+
+配置方式：
+  1. 在 config.yaml 中设置 data_source.type
+  2. 在调用时通过 data_source 参数指定
+  3. 默认使用 tencent（腾讯接口）
 """
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from .tdx_data import fetch_data as fetch_from_tdx
 
 
 class DataLoader:
     """数据加载器类"""
 
-    def __init__(self):
-        self.cache = {}
-
-    def fetch_real_data(self, symbol, days=365):
+    def __init__(self, data_source=None):
         """
-        获取真实 A 股数据（通达信数据源 - 腾讯 HTTPS 接口）
+        初始化数据加载器
+
+        参数:
+            data_source: 数据源类型
+                - None / 'auto': 自动选择（按优先级尝试）
+                - 'tencent': 通达信（腾讯HTTPS）
+                - 'baostock': Baostock 数据源
+                - 'eastmoney': 东方财富
+        """
+        self.cache = {}
+        self.data_source = data_source
+
+    def _fetch_from_source(self, symbol, days, source=None):
+        """从指定数据源获取数据"""
+        source = source or self.data_source or 'tencent'
+
+        if source == 'baostock':
+            from .baostock_data import fetch_data as fetch_fn
+        elif source == 'eastmoney':
+            from .eastmoney_data import fetch_data as fetch_fn
+        elif source == 'tencent':
+            from .tdx_data import fetch_data as fetch_fn
+        elif source == 'auto':
+            # 自动按优先级选择
+            return self._fetch_auto(symbol, days)
+        else:
+            # 默认走腾讯
+            from .tdx_data import fetch_data as fetch_fn
+
+        return fetch_fn(symbol, days)
+
+    def _fetch_auto(self, symbol, days):
+        """自动按优先级获取数据"""
+        # Baostock 最稳定 → 腾讯 → 东方财富
+        priorities = ['baostock', 'tencent', 'eastmoney']
+        for source in priorities:
+            try:
+                from .baostock_data import fetch_data as fetch_baostock
+            except ImportError:
+                priorities.remove('baostock')
+                continue
+
+        for source in priorities:
+            try:
+                df = self._fetch_from_source(symbol, days, source=source)
+                if df is not None and len(df) > 0:
+                    return df
+            except Exception:
+                continue
+        return None
+
+    def fetch_real_data(self, symbol, days=365, data_source=None):
+        """
+        获取真实 A 股数据
 
         参数:
             symbol: A 股代码，如 '600519'（茅台）、'000001'（平安银行）
             days: 获取多少天的历史数据
+            data_source: 数据源覆盖，不传则使用初始化时设置的 data_source
 
         返回:
             DataFrame with columns: date, open, high, low, close, volume, amount
         """
-        df = fetch_from_tdx(symbol, days)
+        source = data_source or self.data_source or 'tencent'
+        df = self._fetch_from_source(symbol, days, source=source)
+
         if df is None:
-            raise ValueError(f"未获取到 {symbol} 的数据，请检查股票代码是否正确")
+            raise ValueError("未获取到 {} 的数据（数据源: {}），请检查股票代码是否正确".format(symbol, source))
 
         df = self.calculate_indicators(df)
         return df
+
+    def get_available_sources(self):
+        """获取所有可用的数据源列表"""
+        sources = ['tencent']  # 默认可用
+        try:
+            import baostock
+            sources.append('baostock')
+        except ImportError:
+            pass
+        try:
+            import requests
+            sources.append('eastmoney')
+        except ImportError:
+            pass
+        return sources
 
     def generate_sample_data(self, symbol, days):
         """

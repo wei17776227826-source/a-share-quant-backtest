@@ -129,6 +129,11 @@ class RunBacktestRequest(BaseModel):
     initial_capital: float = 100000.0
     parameters: dict = {}
     data_source: str = "real"  # "real" 真实数据, "sample" 模拟数据
+    data_source_type: str = "tencent"  # 真实数据源类型:
+                                       #   "tencent"   通达信（腾讯HTTPS）
+                                       #   "baostock"  Baostock 免费开源数据
+                                       #   "eastmoney" 东方财富
+                                       #   "auto"      自动选择
 
 
 class RunOMSScanRequest(BaseModel):
@@ -214,7 +219,7 @@ async def run_backtest(
 
     try:
         # 获取数据
-        loader = DataLoader()
+        loader = DataLoader(data_source=req.data_source_type if req.data_source == "real" else None)
         if req.data_source == "real":
             df = loader.fetch_real_data(req.symbol, req.days)
         else:
@@ -358,10 +363,10 @@ async def run_oms_scan(
 # ===== 行情数据 API =====
 
 @app.get("/api/market/kline")
-async def get_kline(symbol: str, days: int = 365):
+async def get_kline(symbol: str, days: int = 365, data_source: str = "tencent"):
     """获取 K 线数据"""
     try:
-        loader = DataLoader()
+        loader = DataLoader(data_source=data_source)
         df = loader.fetch_real_data(symbol, days)
         klines = []
         for _, row in df.iterrows():
@@ -379,6 +384,22 @@ async def get_kline(symbol: str, days: int = 365):
         return {"symbol": symbol, "klines": klines, "total": len(klines)}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/market/sources")
+async def get_data_sources():
+    """获取可用的数据源列表"""
+    loader = DataLoader()
+    available = loader.get_available_sources()
+    return {
+        "sources": available,
+        "current": "tencent",  # 默认数据源
+        "descriptions": {
+            "tencent": "通达信（腾讯 HTTPS）— 默认数据源",
+            "baostock": "Baostock 免费开源数据 — 国内服务器友好",
+            "eastmoney": "东方财富 — 部分云服务器可能被拦截",
+        },
+    }
 
 
 @app.get("/api/backtest/results")

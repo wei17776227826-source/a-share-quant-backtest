@@ -6,6 +6,7 @@ backtrader>=1.9.78
 matplotlib>=3.7.0
 pyinstaller>=5.0.0
 akshare>=1.10.0
+baostock>=0.9.1
 
 # Web 相关依赖
 fastapi>=0.104.0
