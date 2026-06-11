@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-产业链研究引擎 - 基于 Serenity.skill 方法论
+产业链研究引擎 - 完整版（集成数据源 + 评分 + 报告生成）
 
-接收行业/主题 → 拆解产业链层级 → 搜索并映射 A 股公司 → 评分排序 → 生成报告
+接收行业/主题 → 拆解产业链层级 → 搜索并映射 A 股公司
+→ 获取真实财务数据 → 瓶颈评分 → 生成研究报告
 """
 
 import json
@@ -11,11 +12,16 @@ from datetime import datetime
 from engine.industry_chains import (
     INDUSTRY_CHAINS, get_industry_chain, get_chain_layers, get_chain_summary
 )
+from engine.industry_sources import IndustrySourceSearcher
+from engine.industry_scorer import scorer
+from engine.industry_report_generator import report_generator
 
 
-# 预定义的公司 - 按层级映射（A 股 AI 半导体示例）
-# 实际运行时可通过搜索扩展
+# ===== 预定义的公司-层级映射 =====
+# 首次运行时使用预定义映射，后续可扩展为自动搜索匹配
+
 COMPANY_LAYER_MAP = {
+    # === AI 半导体 ===
     "ai_semiconductor": {
         "memory_interconnect": [
             {"symbol": "688008.SH", "name": "澜起科技", "desc": "DDR5/MRDIMM/PCIe/CXL 互连芯片"},
@@ -54,18 +60,18 @@ COMPANY_LAYER_MAP = {
         "substrate_pcb": [
             {"symbol": "002916.SZ", "name": "深南电路", "desc": "PCB/封装基板"},
         ],
-    }
+    },
 }
 
 
 class IndustryResearchEngine:
-    """产业链研究引擎"""
+    """产业链研究引擎（增强版）"""
 
     def __init__(self):
-        self.research_results = {}  # 内存缓存研究报告
+        self.research_results = {}
+        self.searcher = IndustrySourceSearcher()
 
     def get_available_chains(self):
-        """获取所有可用的产业链摘要"""
         chains = []
         for chain_id in INDUSTRY_CHAINS:
             summary = get_chain_summary(chain_id)
@@ -74,7 +80,6 @@ class IndustryResearchEngine:
         return chains
 
     def get_chain_layers_detail(self, industry_id):
-        """获取产业链层级详情"""
         layers = get_chain_layers(industry_id)
         chain = get_industry_chain(industry_id)
         if not chain:
@@ -88,12 +93,13 @@ class IndustryResearchEngine:
             "keywords": chain["keywords"],
         }
 
-    def research(self, industry_id):
+    def research(self, industry_id, use_ai_report=True):
         """
-        执行产业链研究
+        执行产业链研究（增强版）
 
         参数:
             industry_id: 产业链 ID
+            use_ai_report: 是否生成 AI 研究报告
 
         返回:
             dict: 研究报告
@@ -102,23 +108,52 @@ class IndustryResearchEngine:
         if not chain:
             return {"error": "产业链 '{0}' 不存在".format(industry_id)}
 
-        # 1. 获取产业链层级
         layers = get_chain_layers(industry_id)
-
-        # 2. 获取各层级的公司映射
         layer_companies = self._get_companies_for_layers(industry_id, layers)
 
-        # 3. 为每家公司构建简介信息
         for layer in layer_companies:
             for company in layer["companies"]:
                 company["layer_id"] = layer["layer_id"]
                 company["layer_name"] = layer["layer_name"]
 
-        # 4. 生成研究报告
+        # ===== 新：获取真实财务数据 + 证据 + 评分 =====
+        company_items = []
+        for layer in layer_companies:
+            for company in layer["companies"]:
+                try:
+                    fin = self.searcher.get_financial_summary(company["symbol"], 180)
+                except Exception:
+                    fin = {}
+                try:
+                    ev = self.searcher.extract_evidence_from_price(company["symbol"], 180)
+                except Exception:
+                    ev = []
+                score = scorer.score_company(
+                    company,
+                    {"layer_name": layer["layer_name"], "layer_rank": layer["layer_rank"]},
+                    evidence=ev,
+                    financial=fin,
+                )
+                company["financial"] = fin
+                company["evidence"] = ev
+                company["score"] = score
+
+                company_items.append({
+                    "company": company,
+                    "layer_id": layer["layer_id"],
+                    "layer_name": layer["layer_name"],
+                    "financial": fin,
+                    "evidence": ev,
+                    "score": score,
+                })
+
+        # 生成报告
+        report_id = "report_{0}_{1}".format(
+            industry_id, datetime.now().strftime('%Y%m%d%H%M%S')
+        )
+
         report = {
-            "id": "report_{0}_{1}".format(
-                industry_id, datetime.now().strftime('%Y%m%d%H%M%S')
-            ),
+            "id": report_id,
             "industry_id": industry_id,
             "industry_name": chain["name"],
             "description": chain["description"],
@@ -130,20 +165,28 @@ class IndustryResearchEngine:
             "source_hints": chain["source_hints"],
         }
 
-        # 缓存报告
-        self.research_results[report["id"]] = report
+        # 生成 AI 研究报告（如果启用）
+        if use_ai_report:
+            research_data = {
+                "industry_id": industry_id,
+                "total_companies": sum(l["company_count"] for l in layer_companies),
+                "company_items": company_items,
+            }
+            try:
+                ai_report = report_generator.generate(industry_id, research_data)
+                report["ai_report"] = ai_report
+            except Exception as e:
+                report["ai_report"] = {"error": str(e)}
 
+        self.research_results[report_id] = report
         return report
 
     def get_report(self, report_id):
-        """获取已生成的研究报告"""
         return self.research_results.get(report_id)
 
     def _get_companies_for_layers(self, industry_id, layers):
-        """获取各层级对应的公司列表"""
         industry_map = COMPANY_LAYER_MAP.get(industry_id, {})
         result = []
-
         for layer in layers:
             layer_id = layer["id"]
             companies = industry_map.get(layer_id, [])
@@ -154,29 +197,23 @@ class IndustryResearchEngine:
                 "company_count": len(companies),
                 "companies": companies,
             })
-
         return result
 
     def _generate_summary(self, chain, layer_companies):
-        """生成研究报告摘要"""
-        total_companies = sum(l["company_count"] for l in layer_companies)
-        layer_names = [l["layer_name"] for l in layer_companies]
-
+        total = sum(l["company_count"] for l in layer_companies)
+        names = [l["layer_name"] for l in layer_companies]
         return {
             "total_layers": len(layer_companies),
-            "total_companies": total_companies,
-            "layer_chain": " -> ".join(layer_names),
+            "total_companies": total,
+            "layer_chain": " -> ".join(names),
         }
 
     def search_company_in_industry(self, industry_id, keyword):
-        """在产业链中搜索公司"""
         chain = get_industry_chain(industry_id)
         if not chain:
             return []
-
         industry_map = COMPANY_LAYER_MAP.get(industry_id, {})
         results = []
-
         for layer_id, companies in industry_map.items():
             for company in companies:
                 if (keyword.lower() in company["name"].lower() or
@@ -192,9 +229,7 @@ class IndustryResearchEngine:
                         "layer_id": layer_id,
                         "layer_name": layer_name,
                     })
-
         return results
 
 
-# 全局研究引擎实例
 engine = IndustryResearchEngine()

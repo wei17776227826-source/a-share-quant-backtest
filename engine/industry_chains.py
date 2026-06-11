@@ -11,6 +11,7 @@
 """
 
 INDUSTRY_CHAINS = {
+    # ===== 原有模板（保持兼容） =====
     "ai_semiconductor": {
         "name": "AI 半导体",
         "description": "AI 芯片设计、制造、封装、测试、材料、设备的完整产业链",
@@ -137,21 +138,108 @@ INDUSTRY_CHAINS = {
         ],
         "source_hints": ["年报", "季报", "公告", "专利", "环评/能评"],
     },
+
+    # ===== 新增模板 =====
+    "hbm_memory": {
+        "name": "HBM/存储芯片",
+        "description": "HBM 高带宽存储、DRAM/NAND 闪存、存算一体芯片产业链",
+        "market": "A股",
+        "layers": [
+            {"id": "hbm_chip", "name": "HBM/DRAM 设计", "rank": 1},
+            {"id": "hbm_packaging", "name": "HBM 封装/TSV", "rank": 2},
+            {"id": "hbm_material", "name": "HBM 材料（EMC/Underfill）", "rank": 3},
+            {"id": "hbm_test", "name": "HBM 测试/老化", "rank": 4},
+            {"id": "nand_flash", "name": "NAND/闪存", "rank": 5},
+        ],
+        "keywords": [
+            "HBM", "高带宽存储", "DRAM", "NAND", "存算一体", "TSV",
+            "内存接口", "MRDIMM", "CXL", "DDR5"
+        ],
+        "source_hints": ["年报", "季报", "公告", "客户认证", "专利"],
+    },
+    "liquid_cooling": {
+        "name": "液冷/散热",
+        "description": "AI 数据中心液冷散热、服务器散热、热管理产业链",
+        "market": "A股",
+        "layers": [
+            {"id": "coolant", "name": "冷却液/冷媒", "rank": 1},
+            {"id": "cold_plate", "name": "冷板/换热器", "rank": 2},
+            {"id": "cooling_module", "name": "液冷整机/模块", "rank": 3},
+            {"id": "cooling_pump", "name": "泵/阀/管路", "rank": 4},
+            {"id": "cooling_control", "name": "温控系统/传感器", "rank": 5},
+        ],
+        "keywords": [
+            "液冷", "散热", "热管理", "冷板", "浸没式液冷", "CDU",
+            "服务器散热", "AI散热", "相变冷却"
+        ],
+        "source_hints": ["年报", "季报", "公告", "招投标", "客户认证"],
+    },
+    "low_altitude_economy": {
+        "name": "低空经济",
+        "description": "eVTOL、无人机、低空管控、空天信息产业链",
+        "market": "A股",
+        "layers": [
+            {"id": "evtol", "name": "eVTOL/飞行器整机", "rank": 1},
+            {"id": "uav", "name": "无人机/机载系统", "rank": 2},
+            {"id": "low_alt_control", "name": "低空管控/通信", "rank": 3},
+            {"id": "low_alt_motor", "name": "航空电机/电驱", "rank": 4},
+            {"id": "low_alt_battery", "name": "航空电池/能源", "rank": 5},
+            {"id": "low_alt_material", "name": "航空复合材料", "rank": 6},
+        ],
+        "keywords": [
+            "低空经济", "eVTOL", "飞行汽车", "无人机", "低空管控",
+            "空域管理", "航空电机", "碳纤维"
+        ],
+        "source_hints": ["年报", "季报", "公告", "招投标", "政策文件"],
+    },
+    "new_energy_vehicle": {
+        "name": "新能源汽车",
+        "description": "新能源整车、三电系统（电池/电机/电控）、智能驾驶产业链",
+        "market": "A股",
+        "layers": [
+            {"id": "battery_cell", "name": "动力电池/电芯", "rank": 1},
+            {"id": "battery_material", "name": "电池材料（正极/负极/电解液/隔膜）", "rank": 2},
+            {"id": "motor", "name": "驱动电机/电控", "rank": 3},
+            {"id": "adas", "name": "智能驾驶/座舱芯片", "rank": 4},
+            {"id": "chassis", "name": "底盘/线控制动", "rank": 5},
+            {"id": "thermal", "name": "热管理系统", "rank": 6},
+            {"id": "body_parts", "name": "车身/一体化压铸", "rank": 7},
+        ],
+        "keywords": [
+            "新能源汽车", "锂电池", "固态电池", "智能驾驶", "自动驾驶",
+            "800V", "碳化硅", "一体化压铸", "热管理"
+        ],
+        "source_hints": ["年报", "季报", "公告", "招投标", "客户认证"],
+    },
+    "quantum_computing": {
+        "name": "量子计算",
+        "description": "量子芯片、量子测控、量子软件、量子通信产业链",
+        "market": "A股",
+        "layers": [
+            {"id": "quantum_chip", "name": "量子芯片/超导", "rank": 1},
+            {"id": "quantum_control", "name": "量子测控系统", "rank": 2},
+            {"id": "quantum_cryo", "name": "稀释制冷/低温", "rank": 3},
+            {"id": "quantum_comm", "name": "量子通信/加密", "rank": 4},
+            {"id": "quantum_software", "name": "量子软件/算法", "rank": 5},
+        ],
+        "keywords": [
+            "量子计算", "量子芯片", "超导量子", "量子通信", "量子加密",
+            "稀释制冷", "量子测控", "量子软件"
+        ],
+        "source_hints": ["年报", "公告", "专利", "政策文件"],
+    },
 }
 
 
 def get_all_industry_ids():
-    """获取所有产业链 ID"""
     return list(INDUSTRY_CHAINS.keys())
 
 
 def get_industry_chain(industry_id):
-    """获取产业链模板"""
     return INDUSTRY_CHAINS.get(industry_id)
 
 
 def get_chain_layers(industry_id):
-    """获取产业链的层级列表"""
     chain = get_industry_chain(industry_id)
     if not chain:
         return []
@@ -159,7 +247,6 @@ def get_chain_layers(industry_id):
 
 
 def get_chain_summary(industry_id):
-    """获取产业链摘要信息"""
     chain = get_industry_chain(industry_id)
     if not chain:
         return None
