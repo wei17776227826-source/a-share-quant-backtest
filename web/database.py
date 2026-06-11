@@ -4,7 +4,7 @@
 """
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from database.models import User, BacktestResult, Strategy
+from database.models import User, BacktestResult, IndustryResearch, Strategy
 
 import os
 DB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -111,5 +111,41 @@ def delete_strategy(db, strategy_id, user_id):
     if not strategy:
         return False
     db.delete(strategy)
+    db.commit()
+    return True
+
+
+def save_industry_report(db, user_id, **kwargs):
+    """保存产业链研究报告"""
+    report = IndustryResearch(user_id=user_id, **kwargs)
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    return report
+
+
+def get_user_industry_reports(db, user_id, limit=20, offset=0):
+    """获取用户的所有产业链研究记录"""
+    return (db.query(IndustryResearch)
+            .filter(IndustryResearch.user_id == user_id)
+            .order_by(IndustryResearch.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all())
+
+
+def get_industry_report_by_id(db, report_id):
+    """通过 ID 获取产业链研究报告"""
+    return db.query(IndustryResearch).filter(IndustryResearch.id == report_id).first()
+
+
+def delete_industry_report(db, report_id, user_id):
+    """删除产业链研究报告"""
+    report = db.query(IndustryResearch).filter(
+        IndustryResearch.id == report_id, IndustryResearch.user_id == user_id
+    ).first()
+    if not report:
+        return False
+    db.delete(report)
     db.commit()
     return True

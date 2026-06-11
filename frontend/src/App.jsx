@@ -9,6 +9,8 @@ import Dashboard from './pages/Dashboard'
 import Documents from './pages/Documents'
 import Marketplace from './pages/Marketplace'
 import Workflow from './pages/Workflow'
+import IndustryResearch from './pages/IndustryResearch'
+import IndustryDetail from './pages/IndustryDetail'
 
 function App() {
   return (
@@ -24,6 +26,8 @@ function App() {
             <Route path="documents" element={<Documents />} />
             <Route path="marketplace" element={<Marketplace />} />
             <Route path="workflow" element={<Workflow />} />
+            <Route path="industry" element={<IndustryResearch />} />
+            <Route path="industry/:id" element={<IndustryDetail />} />
           </Route>
         </Routes>
       </BrowserRouter>

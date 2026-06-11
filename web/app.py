@@ -48,6 +48,10 @@ if os.path.exists(frontend_dist):
 templates_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 templates = Jinja2Templates(directory=templates_dir)
 
+# 注册产业链研究路由
+from web.industry_api import router as industry_router
+app.include_router(industry_router)
+
 # 策略工厂
 STRATEGY_MAP = {
     "dual_ma": lambda p: DualMAStrategy(

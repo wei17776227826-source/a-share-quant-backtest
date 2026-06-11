@@ -22,6 +22,7 @@ class User(Base):
     # 关联
     backtests = relationship("BacktestResult", back_populates="user")
     strategies = relationship("Strategy", back_populates="user")
+    industry_research = relationship("IndustryResearch", back_populates="user")
 
     def __repr__(self):
         return f"<User {self.username}>"
@@ -57,6 +58,26 @@ class BacktestResult(Base):
 
     def __repr__(self):
         return f"<BacktestResult {self.id}>"
+
+
+class IndustryResearch(Base):
+    """产业链研究报告表"""
+    __tablename__ = "industry_research"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+
+    industry_id = Column(String)  # 产业链 ID（如 "ai_semiconductor"）
+    industry_name = Column(String)  # 产业链名称
+    report_data = Column(Text)  # JSON - 完整报告数据
+
+    created_at = Column(DateTime, default=datetime.now)
+
+    # 关联
+    user = relationship("User", back_populates="industry_research")
+
+    def __repr__(self):
+        return "<IndustryResearch {0}>".format(self.id)
 
 
 class Strategy(Base):

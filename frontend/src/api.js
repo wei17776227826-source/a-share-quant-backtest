@@ -74,3 +74,27 @@ export const strategies = {
   delete: (id) =>
     api.delete(`/strategies/${id}`).then(r => r.data),
 }
+
+// 产业链研究接口
+export const industry = {
+  chains: () =>
+    api.get('/industry/chains').then(r => r.data),
+
+  chainDetail: (industryId) =>
+    api.get(`/industry/chains/${industryId}`).then(r => r.data),
+
+  research: (industryId) =>
+    api.post('/industry/research', { industry_id: industryId }).then(r => r.data),
+
+  list: (limit = 20, offset = 0) =>
+    api.get('/industry/research', { params: { limit, offset } }).then(r => r.data),
+
+  detail: (id) =>
+    api.get(`/industry/research/${id}`).then(r => r.data),
+
+  delete: (id) =>
+    api.delete(`/industry/research/${id}`).then(r => r.data),
+
+  search: (industryId, keyword) =>
+    api.get('/industry/search', { params: { industry_id: industryId, keyword } }).then(r => r.data),
+}
